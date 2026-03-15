@@ -13,6 +13,7 @@ from backend.app.models.recommendation import (
 )
 from backend.app.models.space import Dimensions, SpaceModel
 from backend.app.services.downloader import find_mjcf_in_dir
+from backend.app.services.room import generate_room_bodies
 
 __all__ = ["generate_mjcf_scene", "validate_mjcf"]
 
@@ -97,14 +98,14 @@ def _create_base_scene(space: SpaceModel) -> ET.Element:
     option.set("gravity", "0 0 -9.81")
     option.set("timestep", "0.002")
 
-    asset = ET.SubElement(root, "asset")
-    _add_texture_and_material(asset)
-    _include_room_mesh(asset, space)
+    ET.SubElement(root, "asset")
 
     worldbody = ET.SubElement(root, "worldbody")
     _add_lighting(worldbody, dims)
-    _add_floor(worldbody, dims)
-    _add_room_body(worldbody, space)
+
+    room_bodies = generate_room_bodies(dims, space.doors, space.windows)
+    for body in room_bodies:
+        worldbody.append(body)
 
     return root
 
