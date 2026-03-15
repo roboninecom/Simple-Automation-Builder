@@ -2,7 +2,7 @@
 
 ## Context
 
-Lang2Robo is a **universal automation generator**. The user describes any business process in text, Claude selects equipment from the catalog, builds a scene, simulates it, and optimizes iteratively. This is a platform, not a single scenario.
+Robo9 Automate is a **universal automation generator**. The user describes any business process in text, Claude selects equipment from the catalog, builds a scene, simulates it, and optimizes iteratively. This is a platform, not a single scenario.
 
 SPEC scenarios (all must work):
 - **3D print farm**: robot + conveyor + camera

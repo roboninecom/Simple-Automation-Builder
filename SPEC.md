@@ -1,4 +1,4 @@
-# Lang2Robo — Demo MVP Specification
+# Robo9 Automate — Demo MVP Specification
 
 Platform: text description of a business process → simulation of an automated cell → iterative improvement. No real hardware. Works with any type of small business and any set of equipment — with or without robots.
 
@@ -879,7 +879,7 @@ python -m lerobot.scripts.train \
 ## Project structure
 
 ```
-lang2robo/
+robo9-automate/
 ├── pyproject.toml
 ├── docker-compose.yml        # API + Web
 ├── .env.example
@@ -1007,8 +1007,8 @@ ANTHROPIC_API_KEY=sk-ant-...   # Only external service
 ## Run (Demo MVP)
 
 ```bash
-git clone https://github.com/user/lang2robo
-cd lang2robo
+git clone https://github.com/roboninecom/automate
+cd automate
 pip install -e ".[training]"
 cd frontend && npm install && npm run build && cd ..
 uvicorn backend.app.main:app --reload

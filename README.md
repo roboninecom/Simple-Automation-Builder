@@ -1,4 +1,4 @@
-# Lang2Robo
+# Robo9 Automate
 
 **Text description → robotic cell simulation → iterative improvement.** No real hardware. Works with any type of small business and any set of equipment — with or without robots.
 
@@ -110,7 +110,7 @@ docker compose down
 ## Project layout
 
 ```
-lang2robo/
+robo9-automate/
 ├── backend/          # FastAPI app, API routes, services, Pydantic models
 ├── frontend/         # React + Three.js UI
 ├── knowledge-base/  # Equipment catalog (JSON)
