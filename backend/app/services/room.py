@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 _WALL_THICKNESS = 0.1
 _FLOOR_THICKNESS = 0.02
-_WALL_COLOR = "0.95 0.93 0.9 1"
+_WALL_COLOR_VIS = "0.92 0.90 0.87 0.2"
+_WALL_COLOR_COL = "0 0 0 0"
 _FLOOR_COLOR = "0.72 0.58 0.42 1"
 _CEILING_COLOR = "0.96 0.96 0.96 0.3"
 
@@ -146,19 +147,31 @@ def _make_wall(
         full_name = f"wall_{wall_name}_{seg_name}"
         world_pos = _wall_local_to_world(wall_name, dims, pos)
         world_size = _wall_local_to_world_size(wall_name, size)
-        ET.SubElement(
-            body,
-            "geom",
-            {
-                "name": full_name,
-                "type": "box",
-                "size": f"{world_size[0]:.4f} {world_size[1]:.4f} {world_size[2]:.4f}",
-                "pos": f"{world_pos[0]:.4f} {world_pos[1]:.4f} {world_pos[2]:.4f}",
-                "rgba": _WALL_COLOR,
-                "contype": "1",
-                "conaffinity": "1",
-            },
-        )
+        size_str = f"{world_size[0]:.4f} {world_size[1]:.4f} {world_size[2]:.4f}"
+        pos_str = f"{world_pos[0]:.4f} {world_pos[1]:.4f} {world_pos[2]:.4f}"
+
+        # Visual geom — semi-transparent, no collision
+        ET.SubElement(body, "geom", {
+            "name": f"{full_name}_vis",
+            "type": "box",
+            "size": size_str,
+            "pos": pos_str,
+            "rgba": _WALL_COLOR_VIS,
+            "contype": "0",
+            "conaffinity": "0",
+            "group": "1",
+        })
+        # Collision geom — invisible, physics only
+        ET.SubElement(body, "geom", {
+            "name": f"{full_name}_col",
+            "type": "box",
+            "size": size_str,
+            "pos": pos_str,
+            "rgba": _WALL_COLOR_COL,
+            "contype": "1",
+            "conaffinity": "1",
+            "group": "3",
+        })
 
     return body
 
