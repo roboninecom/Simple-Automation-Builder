@@ -102,7 +102,7 @@ class ExistingEquipment(BaseModel):
 
 
 class SceneReconstruction(BaseModel):
-    """Result of DISCOVERSE Real2Sim reconstruction.
+    """Result of pycolmap scene reconstruction.
 
     Args:
         mesh_path: Path to the reconstructed mesh file.
@@ -142,7 +142,7 @@ class SpaceModel(BaseModel):
         existing_equipment: Equipment already in the room.
         doors: Doors.
         windows: Windows.
-        reconstruction: Reference to DISCOVERSE reconstruction data.
+        reconstruction: Reference to scene reconstruction data.
     """
 
     dimensions: Dimensions

@@ -144,7 +144,7 @@ def _include_room_mesh(
     asset: ET.Element,
     space: SpaceModel,
 ) -> None:
-    """Include room mesh from DISCOVERSE reconstruction.
+    """Include room mesh from scene reconstruction.
 
     Args:
         asset: Asset XML element.

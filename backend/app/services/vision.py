@@ -31,7 +31,7 @@ async def analyze_scene(
     Args:
         client: Claude API client.
         photos: List of room photo file paths.
-        reconstruction: DISCOVERSE reconstruction result.
+        reconstruction: Scene reconstruction result.
 
     Returns:
         Structured scene analysis with zones, equipment, doors, windows.
@@ -74,7 +74,7 @@ def build_space_model(
     """Merge reconstruction and analysis into a complete SpaceModel.
 
     Args:
-        reconstruction: DISCOVERSE reconstruction data.
+        reconstruction: Scene reconstruction data.
         analysis: Claude Vision analysis results.
 
     Returns:

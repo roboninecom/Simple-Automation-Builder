@@ -52,7 +52,7 @@ export interface ExistingEquipment {
   confidence: number;
 }
 
-/** Result of DISCOVERSE Real2Sim reconstruction. */
+/** Result of pycolmap scene reconstruction. */
 export interface SceneReconstruction {
   mesh_path: string;
   mjcf_path: string;
