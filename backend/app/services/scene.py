@@ -15,7 +15,7 @@ from backend.app.models.space import Dimensions, ExistingEquipment, SpaceModel
 from backend.app.services.downloader import find_mjcf_in_dir
 from backend.app.services.room import generate_room_bodies
 
-__all__ = ["generate_mjcf_scene", "validate_mjcf"]
+__all__ = ["generate_mjcf_scene", "generate_preview_scene", "validate_mjcf"]
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,31 @@ def generate_mjcf_scene(
     tree.write(str(output_path), encoding="unicode", xml_declaration=False)
 
     # MuJoCo XML parser doesn't allow comments before root element
+    return output_path
+
+
+def generate_preview_scene(
+    space: SpaceModel,
+    output_path: Path,
+) -> Path:
+    """Build preview MJCF: room + existing furniture, no recommendation equipment.
+
+    Args:
+        space: Room model with reconstruction and existing equipment.
+        output_path: Path for output MJCF file.
+
+    Returns:
+        Path to the generated preview MJCF file.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    root = _create_base_scene(space)
+    worldbody = root.find("worldbody")
+
+    _add_existing_equipment(worldbody, space)
+
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="  ")
+    tree.write(str(output_path), encoding="unicode", xml_declaration=False)
     return output_path
 
 
