@@ -160,6 +160,22 @@ export interface SceneAdjustment {
 }
 
 /**
+ * Calibrate scale using direct room dimensions.
+ * @param projectId - Project identifier.
+ * @param dims - Real room dimensions.
+ * @returns SpaceModel after calibration + Vision analysis.
+ */
+export async function calibrateDimensions(
+  projectId: string,
+  dims: { width_m: number; length_m: number; ceiling_m: number },
+): Promise<SpaceModel> {
+  return apiFetch<SpaceModel>(`/capture/${projectId}/calibrate-dimensions`, {
+    method: "POST",
+    body: JSON.stringify(dims),
+  });
+}
+
+/**
  * Build preview scene (room + furniture, no recommendation).
  * @param projectId - Project identifier.
  * @returns Build result with warnings.

@@ -103,7 +103,7 @@ async def calibrate_and_analyze(
         space_model.model_dump_json(indent=2),
         encoding="utf-8",
     )
-    advance_phase(project_id, "calibrate")
+    advance_phase(project_id, "scene-editor")
 
     return space_model
 

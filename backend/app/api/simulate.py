@@ -55,7 +55,7 @@ async def build_preview(project_id: str) -> dict:
     valid = validate_mjcf(preview_path)
     warnings = validate_scene_layout(space, preview_path)
 
-    advance_phase(project_id, "preview")
+    advance_phase(project_id, "scene-editor")
 
     return {
         "scene_path": str(preview_path),

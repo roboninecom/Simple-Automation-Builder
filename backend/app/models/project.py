@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 PipelinePhase = Literal[
-    "upload", "calibrate", "preview", "recommend", "build-scene", "simulate", "iterate",
+    "upload", "scene-editor", "recommend", "build-scene", "simulate", "iterate",
 ]
 
 

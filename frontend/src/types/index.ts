@@ -228,8 +228,7 @@ export interface IterationLog {
 /** Pipeline phase identifiers. */
 export type PipelinePhase =
   | "upload"
-  | "calibrate"
-  | "preview"
+  | "scene-editor"
   | "recommend"
   | "build-scene"
   | "simulate"

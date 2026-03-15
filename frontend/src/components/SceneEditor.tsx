@@ -12,6 +12,7 @@ import {
   buildPreviewScene,
   getSceneData,
   adjustPreviewScene,
+  calibrateDimensions,
 } from "@/api/client";
 import type { SceneBody, SceneData, SceneGeom, SceneAdjustment } from "@/api/client";
 
@@ -65,21 +66,57 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<"translate" | "rotate">("translate");
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState<Map<string, SceneAdjustment>>(new Map());
+  const [calibrated, setCalibrated] = useState(false);
+  const [roomWidth, setRoomWidth] = useState("4.5");
+  const [roomLength, setRoomLength] = useState("3.8");
+  const [roomCeiling, setRoomCeiling] = useState("2.7");
+
+  const handleCalibrate = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setLoadingMsg("Applying scale...");
+      await calibrateDimensions(projectId, {
+        width_m: parseFloat(roomWidth),
+        length_m: parseFloat(roomLength),
+        ceiling_m: parseFloat(roomCeiling),
+      });
+
+      setLoadingMsg("Building 3D scene...");
+      await buildPreviewScene(projectId);
+
+      setLoadingMsg("Loading scene data...");
+      const data = await getSceneData(projectId);
+      setSceneData(data);
+      setCalibrated(true);
+      setDirty(new Map());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Calibration failed");
+    } finally {
+      setLoading(false);
+      setLoadingMsg("");
+    }
+  }, [projectId, roomWidth, roomLength, roomCeiling]);
 
   const loadScene = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      setLoadingMsg("Building preview...");
       await buildPreviewScene(projectId);
       const data = await getSceneData(projectId);
       setSceneData(data);
+      setCalibrated(true);
       setDirty(new Map());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load scene");
+    } catch {
+      // Scene not built yet — show calibration panel
+      setCalibrated(false);
     } finally {
       setLoading(false);
+      setLoadingMsg("");
     }
   }, [projectId]);
 
@@ -131,7 +168,7 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
   }, [projectId, dirty, onConfirm]);
 
   if (loading) {
-    return <p style={{ color: "#888", textAlign: "center", padding: 32 }}>Building preview scene...</p>;
+    return <p style={{ color: "#888", textAlign: "center", padding: 32 }}>{loadingMsg || "Loading..."}</p>;
   }
   if (error) {
     return (
@@ -141,7 +178,20 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
       </div>
     );
   }
-  if (!sceneData) return <></>;
+  if (!calibrated || !sceneData) {
+    return (
+      <CalibrationPanel
+        roomWidth={roomWidth}
+        roomLength={roomLength}
+        roomCeiling={roomCeiling}
+        onWidthChange={setRoomWidth}
+        onLengthChange={setRoomLength}
+        onCeilingChange={setRoomCeiling}
+        onApply={handleCalibrate}
+        onBack={onBack}
+      />
+    );
+  }
 
 
   const selectedBody = sceneData.bodies.find(b => b.name === selected) ?? null;
@@ -209,9 +259,8 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
         selected={selected}
         onSelect={setSelected}
         onDelete={handleDelete}
-        onBack={onBack}
         onConfirm={handleSaveAndContinue}
-        onRebuild={loadScene}
+        onRebuild={() => { setCalibrated(false); setSceneData(null); }}
         dirty={dirty.size > 0}
       />
     </div>
@@ -354,12 +403,11 @@ function SelectedTransform({ body, mode, onMove }: {
  * @param props - Panel props.
  * @returns Side panel element.
  */
-function SidePanel({ bodies, selected, onSelect, onDelete, onBack, onConfirm, onRebuild, dirty }: {
+function SidePanel({ bodies, selected, onSelect, onDelete, onConfirm, onRebuild, dirty }: {
   bodies: SceneBody[];
   selected: string | null;
   onSelect: (name: string | null) => void;
   onDelete: (name: string) => void;
-  onBack: () => void;
   onConfirm: () => void;
   onRebuild: () => void;
   dirty: boolean;
@@ -406,10 +454,56 @@ function SidePanel({ bodies, selected, onSelect, onDelete, onBack, onConfirm, on
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-        <button onClick={onRebuild} style={btnSecondaryStyle}>Rebuild</button>
-        <button onClick={onBack} style={btnSecondaryStyle}>Back</button>
+        <button onClick={onRebuild} style={btnSecondaryStyle}>Recalibrate</button>
         <button onClick={onConfirm} style={btnPrimaryStyle}>
           {dirty ? "Save & Continue →" : "Looks Good →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Calibration panel shown before scene is built.
+ * @param props - Calibration panel props.
+ * @returns Calibration form element.
+ */
+function CalibrationPanel({ roomWidth, roomLength, roomCeiling, onWidthChange, onLengthChange, onCeilingChange, onApply, onBack }: {
+  roomWidth: string;
+  roomLength: string;
+  roomCeiling: string;
+  onWidthChange: (v: string) => void;
+  onLengthChange: (v: string) => void;
+  onCeilingChange: (v: string) => void;
+  onApply: () => void;
+  onBack: () => void;
+}): React.JSX.Element {
+  return (
+    <div style={{ maxWidth: 420, margin: "60px auto", padding: 32 }}>
+      <h2 style={{ color: "#ccc", marginBottom: 8 }}>Room Dimensions</h2>
+      <p style={{ color: "#888", fontSize: 13, marginBottom: 24 }}>
+        Enter your room dimensions to calibrate the scene. AI will detect furniture from photos.
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <label style={calLabelStyle}>
+          <span>Width (m)</span>
+          <input type="number" step="0.1" min="0.5" value={roomWidth} onChange={e => onWidthChange(e.target.value)} style={calInputStyle} />
+        </label>
+        <label style={calLabelStyle}>
+          <span>Length (m)</span>
+          <input type="number" step="0.1" min="0.5" value={roomLength} onChange={e => onLengthChange(e.target.value)} style={calInputStyle} />
+        </label>
+        <label style={calLabelStyle}>
+          <span>Ceiling (m)</span>
+          <input type="number" step="0.1" min="1.0" value={roomCeiling} onChange={e => onCeilingChange(e.target.value)} style={calInputStyle} />
+        </label>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 24 }}>
+        <button onClick={onBack} style={btnSecondaryStyle}>Back</button>
+        <button onClick={onApply} style={{ ...btnPrimaryStyle, flex: 1 }}>
+          Apply Scale & Detect Furniture
         </button>
       </div>
     </div>
@@ -471,6 +565,17 @@ const toolBtnStyle: React.CSSProperties = {
 
 const toolBtnActiveStyle: React.CSSProperties = {
   background: "#1a3a5c", borderColor: "#2a6cb0", color: "#fff",
+};
+
+const calLabelStyle: React.CSSProperties = {
+  display: "flex", justifyContent: "space-between", alignItems: "center",
+  fontSize: 14, color: "#ccc",
+};
+
+const calInputStyle: React.CSSProperties = {
+  width: 100, padding: "6px 10px", borderRadius: 4,
+  border: "1px solid #444", background: "#1a1a1a", color: "#fff",
+  fontSize: 14, textAlign: "right",
 };
 
 const labelStyle: React.CSSProperties = {
