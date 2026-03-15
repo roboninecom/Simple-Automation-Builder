@@ -9,7 +9,6 @@ import { OrbitControls, TransformControls, Html, Grid } from "@react-three/drei"
 import * as THREE from "three";
 
 import {
-  getSceneData,
   adjustPreviewScene,
   calibrateAndBuild,
 } from "@/api/client";
@@ -97,13 +96,14 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
   }, [projectId, roomWidth, roomLength, roomCeiling]);
 
   const loadScene = useCallback(async () => {
-    try {
-      const data = await getSceneData(projectId);
+    // Silently check if scene data exists — no error on 404
+    const resp = await fetch(`/api/projects/${projectId}/scene-data`);
+    if (resp.ok) {
+      const data = (await resp.json()) as SceneData;
       setSceneData(data);
       setCalibrated(true);
       setDirty(new Map());
-    } catch {
-      // No scene yet — show calibration panel
+    } else {
       setCalibrated(false);
     }
   }, [projectId]);
