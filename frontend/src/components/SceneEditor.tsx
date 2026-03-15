@@ -275,7 +275,7 @@ function SceneCanvas({ sceneData, selected, selectedBody, mode, onSelect, onBody
           />
         ))}
         {selected && (
-          <SelectedTransform body={selectedBody} mode={mode} onMove={onBodyMove} />
+          <SelectedTransform body={selectedBody} mode={mode} onMove={onBodyMove} roomBounds={sceneData.room} />
         )}
         <Grid
           args={[20, 20]}
@@ -404,10 +404,11 @@ function GeomMesh({ geom, selected }: { geom: SceneGeom; selected: boolean }): R
  * @param props - Selected body, transform mode, move callback.
  * @returns TransformControls element or null.
  */
-function SelectedTransform({ body, mode, onMove }: {
+function SelectedTransform({ body, mode, onMove, roomBounds }: {
   body: SceneBody | null;
   mode: "translate" | "rotate";
   onMove: (name: string, pos: THREE.Vector3) => void;
+  roomBounds: { width: number; length: number; ceiling: number };
 }): React.JSX.Element | null {
   const { scene } = useThree();
 
@@ -422,6 +423,10 @@ function SelectedTransform({ body, mode, onMove }: {
       mode={mode}
       onObjectChange={() => {
         if (obj && mode === "translate") {
+          // Clamp object position to room bounds in real-time
+          obj.position.x = Math.max(0, Math.min(obj.position.x, roomBounds.width));
+          obj.position.y = Math.max(0.05, Math.min(obj.position.y, roomBounds.ceiling));
+          obj.position.z = Math.max(-roomBounds.length, Math.min(obj.position.z, 0));
           onMove(body.name, obj.position.clone());
         }
       }}
