@@ -260,8 +260,7 @@ def _add_existing_equipment(
     for eq in space.existing_equipment:
         dims = _resolve_dims(eq)
         color = _resolve_color(eq)
-        pos_z = _compute_mounting_z(eq, dims, space.dimensions.ceiling_m)
-        pos = f"{eq.position[0]:.3f} {eq.position[1]:.3f} {pos_z:.3f}"
+        pos = f"{eq.position[0]:.3f} {eq.position[1]:.3f} {eq.position[2]:.3f}"
         euler = f"0 0 {math.radians(eq.orientation_deg):.4f}"
 
         body = ET.SubElement(

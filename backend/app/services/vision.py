@@ -9,6 +9,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.prompts import load_prompt
 from backend.app.models.space import (
     Dimensions,
+    ExistingEquipment,
     SceneAnalysis,
     SceneReconstruction,
     SpaceModel,
@@ -106,12 +107,13 @@ def validate_analysis(
     """
     validated_equipment = []
     for eq in analysis.existing_equipment:
+        eq_dims = tuple(_clamp(d, 0.05, max(dims.width_m, dims.length_m)) for d in eq.dimensions)
+        pos_z = _compute_center_z(eq, eq_dims[2], dims.ceiling_m)
         pos = (
             _clamp(eq.position[0], 0.0, dims.width_m),
             _clamp(eq.position[1], 0.0, dims.length_m),
-            0.0 if eq.mounting == "floor" else eq.position[2],
+            pos_z,
         )
-        eq_dims = tuple(_clamp(d, 0.05, max(dims.width_m, dims.length_m)) for d in eq.dimensions)
         if pos != eq.position or eq_dims != eq.dimensions:
             logger.warning(
                 "Clamped equipment '%s': pos %s→%s, dims %s→%s",
@@ -135,6 +137,28 @@ def validate_analysis(
             "existing_equipment": validated_equipment,
         }
     )
+
+
+def _compute_center_z(
+    eq: ExistingEquipment,
+    height: float,
+    ceiling_m: float,
+) -> float:
+    """Compute body-center Z position based on mounting type.
+
+    Args:
+        eq: Equipment entry.
+        height: Equipment height in meters.
+        ceiling_m: Room ceiling height.
+
+    Returns:
+        Z coordinate for the body center.
+    """
+    if eq.mounting == "floor":
+        return height / 2
+    if eq.mounting == "ceiling":
+        return ceiling_m - height / 2
+    return eq.position[2]
 
 
 def _clamp(value: float, min_val: float, max_val: float) -> float:

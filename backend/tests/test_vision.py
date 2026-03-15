@@ -106,7 +106,8 @@ class TestValidateAnalysis:
         assert eq.dimensions[1] == 0.05
         assert eq.dimensions[2] == 0.05
 
-    def test_floor_mounted_z_forced_to_zero(self) -> None:
+    def test_floor_mounted_z_set_to_half_height(self) -> None:
+        """Floor-mounted items get Z = height/2 (body center above floor)."""
         analysis = SceneAnalysis(
             existing_equipment=[
                 ExistingEquipment(
@@ -115,11 +116,13 @@ class TestValidateAnalysis:
                     position=(1.0, 1.0, 0.5),
                     confidence=0.8,
                     mounting="floor",
+                    dimensions=(0.8, 0.3, 1.8),
                 ),
             ],
         )
         result = validate_analysis(analysis, self._dims())
-        assert result.existing_equipment[0].position[2] == 0.0
+        # Z = height / 2 = 1.8 / 2 = 0.9
+        assert result.existing_equipment[0].position[2] == 0.9
 
     def test_wall_mounted_keeps_z(self) -> None:
         analysis = SceneAnalysis(
