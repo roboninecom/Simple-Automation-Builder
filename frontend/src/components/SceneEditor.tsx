@@ -9,7 +9,6 @@ import { OrbitControls, TransformControls, Html, Grid } from "@react-three/drei"
 import * as THREE from "three";
 
 import {
-  buildPreviewScene,
   getSceneData,
   adjustPreviewScene,
   calibrateAndBuild,
@@ -98,21 +97,14 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
   }, [projectId, roomWidth, roomLength, roomCeiling]);
 
   const loadScene = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
-      setLoadingMsg("Building preview...");
-      await buildPreviewScene(projectId);
       const data = await getSceneData(projectId);
       setSceneData(data);
       setCalibrated(true);
       setDirty(new Map());
     } catch {
-      // Scene not built yet — show calibration panel
+      // No scene yet — show calibration panel
       setCalibrated(false);
-    } finally {
-      setLoading(false);
-      setLoadingMsg("");
     }
   }, [projectId]);
 
