@@ -92,7 +92,9 @@ def _create_base_scene(space: SpaceModel) -> ET.Element:
         Root mujoco XML element.
     """
     dims = space.dimensions
-    root = ET.Element("mujoco", model="lang2robo_scene")
+    root = ET.Element("mujoco", model="robo9_automate_scene")
+
+    _add_visual_settings(root)
 
     option = ET.SubElement(root, "option")
     option.set("gravity", "0 0 -9.81")
@@ -101,7 +103,7 @@ def _create_base_scene(space: SpaceModel) -> ET.Element:
     ET.SubElement(root, "asset")
 
     worldbody = ET.SubElement(root, "worldbody")
-    _add_lighting(worldbody, dims)
+    _add_lighting(worldbody, dims, space.windows)
 
     room_bodies = generate_room_bodies(dims, space.doors, space.windows)
     for body in room_bodies:
@@ -110,138 +112,67 @@ def _create_base_scene(space: SpaceModel) -> ET.Element:
     return root
 
 
-def _add_texture_and_material(asset: ET.Element) -> None:
-    """Add default textures and materials to asset element.
+def _add_visual_settings(root: ET.Element) -> None:
+    """Add MuJoCo visual settings for better rendering.
 
     Args:
-        asset: Asset XML element.
+        root: Root mujoco XML element.
     """
-    ET.SubElement(
-        asset,
-        "texture",
-        {
-            "name": "grid",
-            "type": "2d",
-            "builtin": "checker",
-            "width": "512",
-            "height": "512",
-            "rgb1": "0.8 0.8 0.8",
-            "rgb2": "0.6 0.6 0.6",
-        },
-    )
-    ET.SubElement(
-        asset,
-        "material",
-        {
-            "name": "grid_mat",
-            "texture": "grid",
-            "texrepeat": "4 4",
-            "reflectance": "0.1",
-        },
-    )
+    visual = ET.SubElement(root, "visual")
+    ET.SubElement(visual, "headlight", {
+        "ambient": "0.15 0.15 0.15",
+        "diffuse": "0.4 0.4 0.4",
+    })
+    ET.SubElement(visual, "quality", {"shadowsize": "2048"})
+    ET.SubElement(visual, "map", {"znear": "0.01", "zfar": "50"})
 
-
-def _include_room_mesh(
-    asset: ET.Element,
-    space: SpaceModel,
-) -> None:
-    """Include room mesh from scene reconstruction.
-
-    Args:
-        asset: Asset XML element.
-        space: Room model with reconstruction paths.
-    """
-    mesh_path = space.reconstruction.mesh_path
-    if mesh_path.exists() and _is_valid_mesh(mesh_path):
-        ET.SubElement(
-            asset,
-            "mesh",
-            {
-                "name": "room_mesh",
-                "file": str(mesh_path).replace("\\", "/"),
-            },
-        )
 
 
 def _add_lighting(
     worldbody: ET.Element,
     dims: Dimensions,
+    windows: list | None = None,
 ) -> None:
-    """Add scene lighting.
+    """Add multi-point lighting: ambient + fill + optional sunlight from windows.
 
     Args:
         worldbody: Worldbody XML element.
         dims: Room dimensions for positioning.
+        windows: Windows for directional sunlight.
     """
     cx = dims.width_m / 2
     cy = dims.length_m / 2
-    ET.SubElement(
-        worldbody,
-        "light",
-        {
-            "pos": f"{cx:.2f} {cy:.2f} {dims.ceiling_m:.2f}",
-            "dir": "0 0 -1",
-            "diffuse": "1 1 1",
-        },
-    )
 
+    # Main ambient light from ceiling center
+    ET.SubElement(worldbody, "light", {
+        "pos": f"{cx:.2f} {cy:.2f} {dims.ceiling_m:.2f}",
+        "dir": "0 0 -1",
+        "diffuse": "0.6 0.6 0.6",
+        "ambient": "0.3 0.3 0.3",
+    })
+    # Fill light from the side
+    ET.SubElement(worldbody, "light", {
+        "pos": f"0 {cy:.2f} {dims.ceiling_m * 0.7:.2f}",
+        "dir": "1 0 -0.5",
+        "diffuse": "0.3 0.3 0.35",
+        "specular": "0 0 0",
+    })
+    # Sunlight from first window direction if any
+    if windows:
+        w = windows[0]
+        sun_dir = {
+            "north": "0 -1 -0.5",
+            "south": "0 1 -0.5",
+            "east": "-1 0 -0.5",
+            "west": "1 0 -0.5",
+        }.get(w.wall, "0 0 -1")
+        ET.SubElement(worldbody, "light", {
+            "pos": f"{w.position[0]:.2f} {w.position[1]:.2f} {dims.ceiling_m * 0.8:.2f}",
+            "dir": sun_dir,
+            "diffuse": "0.4 0.4 0.35",
+            "specular": "0.1 0.1 0.1",
+        })
 
-def _add_floor(
-    worldbody: ET.Element,
-    dims: Dimensions,
-) -> None:
-    """Add floor plane.
-
-    Args:
-        worldbody: Worldbody XML element.
-        dims: Room dimensions for sizing.
-    """
-    sx = dims.width_m / 2
-    sy = dims.length_m / 2
-    ET.SubElement(
-        worldbody,
-        "geom",
-        {
-            "name": "floor",
-            "type": "plane",
-            "size": f"{sx:.2f} {sy:.2f} 0.01",
-            "material": "grid_mat",
-        },
-    )
-
-
-def _add_room_body(
-    worldbody: ET.Element,
-    space: SpaceModel,
-) -> None:
-    """Add room mesh as visual body.
-
-    Args:
-        worldbody: Worldbody XML element.
-        space: Room model.
-    """
-    mesh_path = space.reconstruction.mesh_path
-    if mesh_path.exists() and _is_valid_mesh(mesh_path):
-        body = ET.SubElement(
-            worldbody,
-            "body",
-            {
-                "name": "room",
-                "pos": "0 0 0",
-            },
-        )
-        ET.SubElement(
-            body,
-            "geom",
-            {
-                "name": "room_visual",
-                "type": "mesh",
-                "mesh": "room_mesh",
-                "contype": "0",
-                "conaffinity": "0",
-                "rgba": "0.9 0.9 0.9 0.3",
-            },
-        )
 
 
 _DEFAULT_DIMENSIONS: dict[str, tuple[float, float, float]] = {
