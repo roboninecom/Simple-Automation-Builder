@@ -12,6 +12,7 @@ import { SceneViewer3D } from "@/components/SceneViewer3D";
 import { RecommendationView } from "@/components/RecommendationView";
 import { SimulationPlayer } from "@/components/SimulationPlayer";
 import { MetricsDashboard } from "@/components/MetricsDashboard";
+import { SceneEditor } from "@/components/SceneEditor";
 import type { PipelinePhase } from "@/types";
 
 /** URL step segments. */
@@ -160,13 +161,14 @@ function StepContent({
   }
   if (currentStep === "preview" && projectId) {
     return (
-      <div style={{ textAlign: "center", padding: 32 }}>
-        <h2>Scene Preview</h2>
-        <p style={{ color: "#888" }}>3D scene editor — coming in next update</p>
-        <button onClick={nav.onPreviewComplete} style={styles.stepActive}>
-          Continue to Plan
-        </button>
-      </div>
+      <SceneEditor
+        projectId={projectId}
+        onConfirm={nav.onPreviewComplete}
+        onBack={() => {
+          nav.selfNavigatingRef.current = true;
+          window.history.back();
+        }}
+      />
     );
   }
   if (currentStep === "recommend" && projectId) {

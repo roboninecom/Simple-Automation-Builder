@@ -122,6 +122,77 @@ export async function generateRecommendation(
   });
 }
 
+/** Scene body data for Three.js editor. */
+export interface SceneGeom {
+  name: string;
+  type: string;
+  size: number[];
+  pos: number[];
+  rgba: number[];
+}
+
+/** Scene body data for Three.js editor. */
+export interface SceneBody {
+  name: string;
+  category: string;
+  position: number[];
+  euler: number[];
+  geoms: SceneGeom[];
+}
+
+/** Full scene data for Three.js editor. */
+export interface SceneData {
+  room: { width: number; length: number; ceiling: number };
+  bodies: SceneBody[];
+  walls: SceneGeom[];
+  floor: SceneGeom;
+  doors: { position: number[]; width: number; wall: string }[];
+  windows: { position: number[]; width: number; wall: string }[];
+}
+
+/** Scene adjustment request. */
+export interface SceneAdjustment {
+  body_name: string;
+  position?: [number, number, number];
+  orientation_deg?: number;
+  dimensions?: [number, number, number];
+  remove?: boolean;
+}
+
+/**
+ * Build preview scene (room + furniture, no recommendation).
+ * @param projectId - Project identifier.
+ * @returns Build result with warnings.
+ */
+export async function buildPreviewScene(projectId: string): Promise<{ valid: boolean; warnings: unknown[] }> {
+  return apiFetch(`/projects/${projectId}/build-preview`, { method: "POST" });
+}
+
+/**
+ * Get scene data as JSON for Three.js editor.
+ * @param projectId - Project identifier.
+ * @returns Scene data with bodies, walls, floor.
+ */
+export async function getSceneData(projectId: string): Promise<SceneData> {
+  return apiFetch<SceneData>(`/projects/${projectId}/scene-data`);
+}
+
+/**
+ * Apply adjustments to the preview scene.
+ * @param projectId - Project identifier.
+ * @param adjustments - List of body adjustments.
+ * @returns Updated warnings.
+ */
+export async function adjustPreviewScene(
+  projectId: string,
+  adjustments: SceneAdjustment[],
+): Promise<{ warnings: unknown[] }> {
+  return apiFetch(`/projects/${projectId}/adjust-preview`, {
+    method: "POST",
+    body: JSON.stringify({ adjustments }),
+  });
+}
+
 /** Response from scene build endpoint. */
 interface BuildSceneResponse {
   scene_path: string;
