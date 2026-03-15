@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from backend.app.models.space import Dimensions, DimensionCalibration, ReferenceCalibration
+from backend.app.models.space import Dimensions, ReferenceCalibration
 from backend.app.services.reconstruction import (
     _compute_scale_factor,
     _compute_scale_from_dimensions,

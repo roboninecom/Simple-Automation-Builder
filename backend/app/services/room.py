@@ -265,7 +265,7 @@ def _collect_openings(
 
 
 def _split_wall_segments(
-    wall_name: str,
+    _wall_name: str,
     wall_length: float,
     ceiling: float,
     openings: list[_Opening],

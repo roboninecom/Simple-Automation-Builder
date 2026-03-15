@@ -2,9 +2,8 @@
 
 import xml.etree.ElementTree as ET
 
-from backend.app.models.space import Dimensions, Door, SpaceModel
+from backend.app.models.space import SpaceModel
 from backend.app.services.scene_validation import (
-    SceneWarning,
     adjust_scene,
     validate_scene_layout,
 )
@@ -24,6 +23,7 @@ def _make_space(
     doors: list | None = None,
 ) -> SpaceModel:
     from pathlib import Path
+
     from backend.app.models.space import Dimensions, SceneReconstruction
 
     tmp = Path("/tmp/test")

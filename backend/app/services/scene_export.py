@@ -134,7 +134,7 @@ def _parse_vec(s: str) -> list[float]:
     return [float(v) for v in s.split()]
 
 
-def _guess_category(name: str, geoms: list[dict]) -> str:
+def _guess_category(name: str, _geoms: list[dict]) -> str:
     """Guess equipment category from body name.
 
     Args:

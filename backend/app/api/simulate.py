@@ -13,7 +13,7 @@ from backend.app.services.downloader import download_equipment_models
 from backend.app.services.project_status import advance_phase, get_project_dir
 from backend.app.services.scene import generate_mjcf_scene, generate_preview_scene, validate_mjcf
 from backend.app.services.scene_export import export_scene_data
-from backend.app.services.scene_validation import SceneWarning, adjust_scene, validate_scene_layout
+from backend.app.services.scene_validation import adjust_scene, validate_scene_layout
 from backend.app.services.simulator import run_simulation, run_visual_simulation
 
 __all__ = ["router"]
@@ -61,7 +61,10 @@ async def build_preview(project_id: str) -> dict:
         "scene_path": str(preview_path),
         "valid": valid,
         "equipment_count": len(space.existing_equipment),
-        "warnings": [{"body": w.body_name, "level": w.level, "message": w.message} for w in warnings],
+        "warnings": [
+            {"body": w.body_name, "level": w.level, "message": w.message}
+            for w in warnings
+        ],
     }
 
 
@@ -109,7 +112,10 @@ async def adjust_preview(project_id: str, request: AdjustRequest) -> dict:
 
     return {
         "status": "adjusted",
-        "warnings": [{"body": w.body_name, "level": w.level, "message": w.message} for w in warnings],
+        "warnings": [
+            {"body": w.body_name, "level": w.level, "message": w.message}
+            for w in warnings
+        ],
     }
 
 
@@ -126,8 +132,6 @@ def _apply_adjustments_to_space(
     Returns:
         Updated SpaceModel with modified equipment.
     """
-    import math
-
     equipment = list(space.existing_equipment)
 
     for adj in adjustments:

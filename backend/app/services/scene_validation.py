@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from backend.app.models.space import SpaceModel
+from backend.app.models.space import Dimensions, SpaceModel
 
 __all__ = [
     "SceneWarning",
@@ -111,40 +111,53 @@ def adjust_scene(
         return scene_path
 
     for adj in adjustments:
-        body_name = adj.get("body_name", "")
-        body = worldbody.find(f".//body[@name='{body_name}']")
-        if body is None:
-            logger.warning("Body '%s' not found in scene", body_name)
-            continue
-
-        if adj.get("remove"):
-            parent = _find_parent(worldbody, body)
-            if parent is not None:
-                parent.remove(body)
-            continue
-
-        if "position" in adj:
-            pos = adj["position"]
-            body.set("pos", f"{pos[0]:.3f} {pos[1]:.3f} {pos[2]:.3f}")
-
-        if "orientation_deg" in adj:
-            deg = adj["orientation_deg"]
-            body.set("euler", f"0 0 {math.radians(deg):.4f}")
-
-        if "dimensions" in adj:
-            new_dims = adj["dimensions"]
-            for geom in body.findall("geom"):
-                if geom.get("type") == "box":
-                    geom.set(
-                        "size",
-                        f"{new_dims[0]/2:.3f} {new_dims[1]/2:.3f} {new_dims[2]/2:.3f}",
-                    )
-                    break
+        _apply_single_adjustment(worldbody, adj)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     ET.indent(tree, space="  ")
     tree.write(str(output_path), encoding="unicode", xml_declaration=False)
     return output_path
+
+
+def _apply_single_adjustment(
+    worldbody: ET.Element,
+    adj: dict,
+) -> None:
+    """Apply a single adjustment to a body in the scene.
+
+    Args:
+        worldbody: Worldbody XML element.
+        adj: Adjustment dict with body_name and changes.
+    """
+    body_name = adj.get("body_name", "")
+    body = worldbody.find(f".//body[@name='{body_name}']")
+    if body is None:
+        logger.warning("Body '%s' not found in scene", body_name)
+        return
+
+    if adj.get("remove"):
+        parent = _find_parent(worldbody, body)
+        if parent is not None:
+            parent.remove(body)
+        return
+
+    if "position" in adj:
+        pos = adj["position"]
+        body.set("pos", f"{pos[0]:.3f} {pos[1]:.3f} {pos[2]:.3f}")
+
+    if "orientation_deg" in adj:
+        deg = adj["orientation_deg"]
+        body.set("euler", f"0 0 {math.radians(deg):.4f}")
+
+    if "dimensions" in adj:
+        new_dims = adj["dimensions"]
+        for geom in body.findall("geom"):
+            if geom.get("type") == "box":
+                geom.set(
+                    "size",
+                    f"{new_dims[0]/2:.3f} {new_dims[1]/2:.3f} {new_dims[2]/2:.3f}",
+                )
+                break
 
 
 def _find_parent(
@@ -213,7 +226,7 @@ def _extract_body_boxes(worldbody: ET.Element) -> list[_BodyBox]:
 
 def _check_bounds(
     box: _BodyBox,
-    dims: "Dimensions",
+    dims: Dimensions,
 ) -> list[SceneWarning]:
     """Check if equipment is within room bounds.
 
@@ -224,8 +237,6 @@ def _check_bounds(
     Returns:
         Warnings for out-of-bounds bodies.
     """
-    from backend.app.models.space import Dimensions  # noqa: F811
-
     warnings: list[SceneWarning] = []
     margin = 0.05
     if box.x_min < -margin or box.x_max > dims.width_m + margin:
