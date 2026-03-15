@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 __all__ = [
+    "DimensionCalibration",
     "Dimensions",
     "Door",
     "ExistingEquipment",
@@ -30,6 +31,20 @@ class ReferenceCalibration(BaseModel):
     point_a: tuple[float, float, float]
     point_b: tuple[float, float, float]
     real_distance_m: float = Field(gt=0)
+
+
+class DimensionCalibration(BaseModel):
+    """Calibration via direct room dimensions input.
+
+    Args:
+        width_m: Real room width in meters.
+        length_m: Real room length in meters.
+        ceiling_m: Real ceiling height in meters.
+    """
+
+    width_m: float = Field(gt=0)
+    length_m: float = Field(gt=0)
+    ceiling_m: float = Field(default=2.7, gt=0)
 
 
 class Dimensions(BaseModel):

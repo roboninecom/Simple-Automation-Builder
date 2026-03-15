@@ -16,11 +16,17 @@ import numpy as np
 if TYPE_CHECKING:
     import pycolmap
 
-from backend.app.models.space import Dimensions, ReferenceCalibration, SceneReconstruction
+from backend.app.models.space import (
+    DimensionCalibration,
+    Dimensions,
+    ReferenceCalibration,
+    SceneReconstruction,
+)
 
 __all__ = [
     "reconstruct_scene",
     "calibrate_scale",
+    "calibrate_scale_from_dimensions",
     "rescale_pointcloud",
     "check_reconstruction_deps",
     "transform_colmap_to_threejs",
@@ -135,6 +141,64 @@ def calibrate_scale(
         pointcloud_path=reconstruction.pointcloud_path,
         dimensions=scaled_dims,
     )
+
+
+def calibrate_scale_from_dimensions(
+    reconstruction: SceneReconstruction,
+    calibration: DimensionCalibration,
+) -> SceneReconstruction:
+    """Apply scale calibration using direct room dimension input.
+
+    Args:
+        reconstruction: Uncalibrated reconstruction.
+        calibration: Real room width, length, ceiling from user.
+
+    Returns:
+        New SceneReconstruction with calibrated dimensions.
+    """
+    scale_factor = _compute_scale_from_dimensions(
+        reconstruction.dimensions,
+        calibration.width_m,
+        calibration.length_m,
+    )
+    target_dims = Dimensions(
+        width_m=calibration.width_m,
+        length_m=calibration.length_m,
+        ceiling_m=calibration.ceiling_m,
+        area_m2=calibration.width_m * calibration.length_m,
+    )
+    _apply_scale_to_mjcf(reconstruction.mjcf_path, scale_factor)
+    if reconstruction.mesh_path.stat().st_size > 0:
+        _apply_scale_to_mesh(reconstruction.mesh_path, scale_factor)
+    if reconstruction.pointcloud_path.stat().st_size > 0:
+        rescale_pointcloud(reconstruction.pointcloud_path, scale_factor)
+
+    return SceneReconstruction(
+        mesh_path=reconstruction.mesh_path,
+        mjcf_path=reconstruction.mjcf_path,
+        pointcloud_path=reconstruction.pointcloud_path,
+        dimensions=target_dims,
+    )
+
+
+def _compute_scale_from_dimensions(
+    uncalibrated: Dimensions,
+    real_width: float,
+    real_length: float,
+) -> float:
+    """Compute average scale factor from room dimensions.
+
+    Args:
+        uncalibrated: Uncalibrated dimensions from reconstruction.
+        real_width: Real room width in meters.
+        real_length: Real room length in meters.
+
+    Returns:
+        Average scale factor.
+    """
+    scale_w = real_width / uncalibrated.width_m
+    scale_l = real_length / uncalibrated.length_m
+    return (scale_w + scale_l) / 2
 
 
 def _run_pycolmap_pipeline(

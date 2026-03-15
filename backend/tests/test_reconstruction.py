@@ -4,9 +4,10 @@ from pathlib import Path
 
 import numpy as np
 
-from backend.app.models.space import Dimensions, ReferenceCalibration
+from backend.app.models.space import Dimensions, DimensionCalibration, ReferenceCalibration
 from backend.app.services.reconstruction import (
     _compute_scale_factor,
+    _compute_scale_from_dimensions,
     _scale_dimensions,
     check_reconstruction_deps,
     rescale_pointcloud,
@@ -60,6 +61,31 @@ class TestScaleCalibration:
         assert abs(scaled.length_m - 4.0) < 1e-6
         assert abs(scaled.ceiling_m - 2.5) < 1e-6
         assert abs(scaled.area_m2 - 20.0) < 1e-6
+
+
+class TestScaleFromDimensions:
+    """Tests for scale computation from direct room dimensions."""
+
+    def test_identity_scale(self) -> None:
+        uncalibrated = Dimensions(width_m=5.0, length_m=4.0, ceiling_m=2.5, area_m2=20.0)
+        factor = _compute_scale_from_dimensions(uncalibrated, 5.0, 4.0)
+        assert abs(factor - 1.0) < 1e-6
+
+    def test_double_scale(self) -> None:
+        uncalibrated = Dimensions(width_m=2.5, length_m=2.0, ceiling_m=1.25, area_m2=5.0)
+        factor = _compute_scale_from_dimensions(uncalibrated, 5.0, 4.0)
+        assert abs(factor - 2.0) < 1e-6
+
+    def test_average_of_ratios(self) -> None:
+        uncalibrated = Dimensions(width_m=2.0, length_m=4.0, ceiling_m=2.0, area_m2=8.0)
+        # scale_w = 4.0/2.0 = 2.0, scale_l = 6.0/4.0 = 1.5, avg = 1.75
+        factor = _compute_scale_from_dimensions(uncalibrated, 4.0, 6.0)
+        assert abs(factor - 1.75) < 1e-6
+
+    def test_fractional_scale(self) -> None:
+        uncalibrated = Dimensions(width_m=10.0, length_m=8.0, ceiling_m=5.0, area_m2=80.0)
+        factor = _compute_scale_from_dimensions(uncalibrated, 5.0, 4.0)
+        assert abs(factor - 0.5) < 1e-6
 
 
 class TestCoordinateTransform:
