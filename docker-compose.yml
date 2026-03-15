@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${BACKEND_PORT:-8000}:${BACKEND_PORT:-8000}"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.6}
+      - OPENROUTER_VISION_MODEL=${OPENROUTER_VISION_MODEL:-}
+      - OPENROUTER_PLANNING_MODEL=${OPENROUTER_PLANNING_MODEL:-}
+      - BACKEND_HOST=${BACKEND_HOST:-0.0.0.0}
+      - BACKEND_PORT=${BACKEND_PORT:-8000}
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped
