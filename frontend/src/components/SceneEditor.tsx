@@ -12,7 +12,7 @@ import {
   buildPreviewScene,
   getSceneData,
   adjustPreviewScene,
-  calibrateDimensions,
+  calibrateAndBuild,
 } from "@/api/client";
 import type { SceneBody, SceneData, SceneGeom, SceneAdjustment } from "@/api/client";
 import { PointCloudModal } from "@/components/PointCloudModal";
@@ -80,19 +80,13 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
     setLoading(true);
     setError(null);
     try {
-      setLoadingMsg("Applying scale...");
-      await calibrateDimensions(projectId, {
+      setLoadingMsg("Calibrating & analyzing room with AI...");
+      const result = await calibrateAndBuild(projectId, {
         width_m: parseFloat(roomWidth),
         length_m: parseFloat(roomLength),
         ceiling_m: parseFloat(roomCeiling),
       });
-
-      setLoadingMsg("Building 3D scene...");
-      await buildPreviewScene(projectId);
-
-      setLoadingMsg("Loading scene data...");
-      const data = await getSceneData(projectId);
-      setSceneData(data);
+      setSceneData(result.scene_data);
       setCalibrated(true);
       setDirty(new Map());
     } catch (e) {

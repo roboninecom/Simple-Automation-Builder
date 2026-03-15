@@ -176,6 +176,22 @@ export async function calibrateDimensions(
 }
 
 /**
+ * Calibrate, analyze, build preview, and return scene data in one call.
+ * @param projectId - Project identifier.
+ * @param dims - Real room dimensions.
+ * @returns Scene data ready for Three.js editor.
+ */
+export async function calibrateAndBuild(
+  projectId: string,
+  dims: { width_m: number; length_m: number; ceiling_m: number },
+): Promise<{ scene_data: SceneData; equipment_count: number }> {
+  return apiFetch(`/capture/${projectId}/calibrate-and-build`, {
+    method: "POST",
+    body: JSON.stringify(dims),
+  });
+}
+
+/**
  * Build preview scene (room + furniture, no recommendation).
  * @param projectId - Project identifier.
  * @returns Build result with warnings.
