@@ -124,6 +124,14 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
   }, [projectId]);
 
   const handleBodyMove = useCallback((name: string, worldPos: THREE.Vector3) => {
+    if (!sceneData) return;
+    const { width, length, ceiling } = sceneData.room;
+
+    // Clamp to room bounds in Three.js space (Y-up, Z = -MuJoCo_Y)
+    worldPos.x = Math.max(0, Math.min(worldPos.x, width));
+    worldPos.y = Math.max(0.05, Math.min(worldPos.y, ceiling));
+    worldPos.z = Math.max(-length, Math.min(worldPos.z, 0));
+
     const mjPos = threeToMj(worldPos);
     setDirty(prev => {
       const next = new Map(prev);
@@ -139,7 +147,7 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
         ),
       };
     });
-  }, []);
+  }, [sceneData]);
 
   const handleDelete = useCallback((name: string) => {
     setDirty(prev => {
