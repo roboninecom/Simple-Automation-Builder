@@ -197,61 +197,15 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
 
   return (
     <div style={{ display: "flex", height: "calc(100vh - 180px)", gap: 0 }}>
-      <div style={{ flex: 1, position: "relative" }}>
-        <Canvas camera={{ position: [-3, 4, 5], fov: 50 }}>
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[5, 8, 5]} intensity={0.6} />
-          <OrbitControls makeDefault />
-
-          <RoomGeometry
-            walls={sceneData.walls}
-            floor={sceneData.floor}
-          />
-
-          {sceneData.bodies.map(body => (
-            <EquipmentBody
-              key={body.name}
-              body={body}
-              selected={selected === body.name}
-              onClick={() => setSelected(body.name)}
-            />
-          ))}
-
-          {selected && (
-            <SelectedTransform
-              body={selectedBody}
-              mode={mode}
-              onMove={handleBodyMove}
-            />
-          )}
-
-          <Grid
-            args={[20, 20]}
-            position={[sceneData.room.width / 2, 0.001, -sceneData.room.length / 2]}
-            cellSize={0.5}
-            cellColor="#333"
-            sectionSize={1}
-            sectionColor="#555"
-            fadeDistance={15}
-          />
-          <axesHelper args={[1]} />
-        </Canvas>
-
-        <div style={toolbarStyle}>
-          <button
-            onClick={() => setMode("translate")}
-            style={{ ...toolBtnStyle, ...(mode === "translate" ? toolBtnActiveStyle : {}) }}
-          >
-            Move
-          </button>
-          <button
-            onClick={() => setMode("rotate")}
-            style={{ ...toolBtnStyle, ...(mode === "rotate" ? toolBtnActiveStyle : {}) }}
-          >
-            Rotate
-          </button>
-        </div>
-      </div>
+      <SceneCanvas
+        sceneData={sceneData}
+        selected={selected}
+        selectedBody={selectedBody}
+        mode={mode}
+        onSelect={setSelected}
+        onBodyMove={handleBodyMove}
+        onModeChange={setMode}
+      />
 
       <SidePanel
         bodies={sceneData.bodies}
@@ -269,6 +223,59 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
         isOpen={showPointCloud}
         onClose={() => setShowPointCloud(false)}
       />
+    </div>
+  );
+}
+
+/**
+ * Three.js canvas with room geometry, equipment, and transform controls.
+ * @param props - Scene data and interaction callbacks.
+ * @returns Canvas with 3D scene.
+ */
+function SceneCanvas({ sceneData, selected, selectedBody, mode, onSelect, onBodyMove, onModeChange }: {
+  sceneData: SceneData;
+  selected: string | null;
+  selectedBody: SceneBody | null;
+  mode: "translate" | "rotate";
+  onSelect: (name: string) => void;
+  onBodyMove: (name: string, pos: THREE.Vector3) => void;
+  onModeChange: (m: "translate" | "rotate") => void;
+}): React.JSX.Element {
+  return (
+    <div style={{ flex: 1, position: "relative" }}>
+      <Canvas camera={{ position: [-3, 4, 5], fov: 50 }}>
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[5, 8, 5]} intensity={0.6} />
+        <OrbitControls makeDefault />
+        <RoomGeometry walls={sceneData.walls} floor={sceneData.floor} />
+        {sceneData.bodies.map(body => (
+          <EquipmentBody
+            key={body.name}
+            body={body}
+            selected={selected === body.name}
+            onClick={() => onSelect(body.name)}
+          />
+        ))}
+        {selected && (
+          <SelectedTransform body={selectedBody} mode={mode} onMove={onBodyMove} />
+        )}
+        <Grid
+          args={[20, 20]}
+          position={[sceneData.room.width / 2, 0.001, -sceneData.room.length / 2]}
+          cellSize={0.5} cellColor="#333" sectionSize={1} sectionColor="#555" fadeDistance={15}
+        />
+        <axesHelper args={[1]} />
+      </Canvas>
+      <div style={toolbarStyle}>
+        <button
+          onClick={() => onModeChange("translate")}
+          style={{ ...toolBtnStyle, ...(mode === "translate" ? toolBtnActiveStyle : {}) }}
+        >Move</button>
+        <button
+          onClick={() => onModeChange("rotate")}
+          style={{ ...toolBtnStyle, ...(mode === "rotate" ? toolBtnActiveStyle : {}) }}
+        >Rotate</button>
+      </div>
     </div>
   );
 }
@@ -442,22 +449,7 @@ function SidePanel({ bodies, selected, onSelect, onDelete, onConfirm, onRebuild,
       </div>
 
       {selectedBody && (
-        <div style={propsStyle}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            {selectedBody.name}
-          </div>
-          <div style={propRowStyle}>
-            <span>X:</span> <span>{selectedBody.position[0]?.toFixed(2)}</span>
-            <span>Y:</span> <span>{selectedBody.position[1]?.toFixed(2)}</span>
-          </div>
-          <div style={propRowStyle}>
-            <span>Z:</span> <span>{(selectedBody.position[2] ?? 0).toFixed(2)}</span>
-            <span>Rot:</span> <span>{((selectedBody.euler[2] ?? 0) * 180 / Math.PI).toFixed(0)}°</span>
-          </div>
-          <button onClick={() => onDelete(selectedBody.name)} style={deleteBtnStyle}>
-            Delete
-          </button>
-        </div>
+        <SelectedBodyProps body={selectedBody} onDelete={onDelete} />
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
@@ -467,6 +459,35 @@ function SidePanel({ bodies, selected, onSelect, onDelete, onConfirm, onRebuild,
           {dirty ? "Save & Continue →" : "Looks Good →"}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Properties panel for the selected equipment body.
+ * @param props - Selected body and delete handler.
+ * @returns Properties panel element.
+ */
+function SelectedBodyProps({ body, onDelete }: {
+  body: SceneBody;
+  onDelete: (name: string) => void;
+}): React.JSX.Element {
+  return (
+    <div style={propsStyle}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+        {body.name}
+      </div>
+      <div style={propRowStyle}>
+        <span>X:</span> <span>{body.position[0]?.toFixed(2)}</span>
+        <span>Y:</span> <span>{body.position[1]?.toFixed(2)}</span>
+      </div>
+      <div style={propRowStyle}>
+        <span>Z:</span> <span>{(body.position[2] ?? 0).toFixed(2)}</span>
+        <span>Rot:</span> <span>{((body.euler[2] ?? 0) * 180 / Math.PI).toFixed(0)}°</span>
+      </div>
+      <button onClick={() => onDelete(body.name)} style={deleteBtnStyle}>
+        Delete
+      </button>
     </div>
   );
 }

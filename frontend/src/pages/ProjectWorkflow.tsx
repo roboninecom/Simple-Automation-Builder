@@ -154,10 +154,7 @@ function StepContent({
       <SceneEditor
         projectId={projectId}
         onConfirm={nav.onSceneEditorComplete}
-        onBack={() => {
-          nav.selfNavigatingRef.current = true;
-          window.history.back();
-        }}
+        onBack={nav.onBack}
       />
     );
   }
