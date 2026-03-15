@@ -15,6 +15,7 @@ import {
   calibrateDimensions,
 } from "@/api/client";
 import type { SceneBody, SceneData, SceneGeom, SceneAdjustment } from "@/api/client";
+import { PointCloudModal } from "@/components/PointCloudModal";
 
 /** Props for the SceneEditor component. */
 interface SceneEditorProps {
@@ -73,6 +74,7 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
   const [roomWidth, setRoomWidth] = useState("4.5");
   const [roomLength, setRoomLength] = useState("3.8");
   const [roomCeiling, setRoomCeiling] = useState("2.7");
+  const [showPointCloud, setShowPointCloud] = useState(false);
 
   const handleCalibrate = useCallback(async () => {
     setLoading(true);
@@ -261,7 +263,14 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
         onDelete={handleDelete}
         onConfirm={handleSaveAndContinue}
         onRebuild={() => { setCalibrated(false); setSceneData(null); }}
+        onShowPointCloud={() => setShowPointCloud(true)}
         dirty={dirty.size > 0}
+      />
+
+      <PointCloudModal
+        projectId={projectId}
+        isOpen={showPointCloud}
+        onClose={() => setShowPointCloud(false)}
       />
     </div>
   );
@@ -403,12 +412,13 @@ function SelectedTransform({ body, mode, onMove }: {
  * @param props - Panel props.
  * @returns Side panel element.
  */
-function SidePanel({ bodies, selected, onSelect, onDelete, onConfirm, onRebuild, dirty }: {
+function SidePanel({ bodies, selected, onSelect, onDelete, onConfirm, onRebuild, onShowPointCloud, dirty }: {
   bodies: SceneBody[];
   selected: string | null;
   onSelect: (name: string | null) => void;
   onDelete: (name: string) => void;
   onConfirm: () => void;
+  onShowPointCloud: () => void;
   onRebuild: () => void;
   dirty: boolean;
 }): React.JSX.Element {
@@ -454,6 +464,7 @@ function SidePanel({ bodies, selected, onSelect, onDelete, onConfirm, onRebuild,
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+        <button onClick={onShowPointCloud} style={btnSecondaryStyle}>View Point Cloud</button>
         <button onClick={onRebuild} style={btnSecondaryStyle}>Recalibrate</button>
         <button onClick={onConfirm} style={btnPrimaryStyle}>
           {dirty ? "Save & Continue →" : "Looks Good →"}
