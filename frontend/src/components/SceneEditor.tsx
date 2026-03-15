@@ -95,22 +95,33 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
     }
   }, [projectId, roomWidth, roomLength, roomCeiling]);
 
-  const loadScene = useCallback(async () => {
-    // Silently check if scene data exists — no error on 404
-    const resp = await fetch(`/api/projects/${projectId}/scene-data`);
-    if (resp.ok) {
-      const data = (await resp.json()) as SceneData;
-      setSceneData(data);
-      setCalibrated(true);
-      setDirty(new Map());
-    } else {
-      setCalibrated(false);
-    }
-  }, [projectId]);
-
   useEffect(() => {
-    loadScene();
-  }, [loadScene]);
+    const controller = new AbortController();
+
+    async function checkScene(): Promise<void> {
+      try {
+        const resp = await fetch(`/api/projects/${projectId}/scene-data`, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (resp.ok) {
+          const data = (await resp.json()) as SceneData;
+          if (controller.signal.aborted) return;
+          setSceneData(data);
+          setCalibrated(true);
+          setDirty(new Map());
+        } else {
+          setCalibrated(false);
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setCalibrated(false);
+      }
+    }
+
+    checkScene();
+    return () => controller.abort();
+  }, [projectId]);
 
   const handleBodyMove = useCallback((name: string, worldPos: THREE.Vector3) => {
     const mjPos = threeToMj(worldPos);
@@ -162,7 +173,7 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
     return (
       <div style={{ textAlign: "center", padding: 32 }}>
         <p style={{ color: "#f87171" }}>{error}</p>
-        <button onClick={loadScene} style={btnStyle}>Retry</button>
+        <button onClick={() => { setError(null); setCalibrated(false); }} style={btnStyle}>Retry</button>
       </div>
     );
   }
