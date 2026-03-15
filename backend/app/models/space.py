@@ -1,6 +1,7 @@
 """Space and scene models for room capture and reconstruction."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -67,10 +68,14 @@ class Door(BaseModel):
     Args:
         position: 2D position (x, y) in meters.
         width_m: Door width in meters.
+        height_m: Door height in meters.
+        wall: Which wall the door is on.
     """
 
     position: tuple[float, float]
     width_m: float = Field(gt=0)
+    height_m: float = Field(default=2.1, gt=0)
+    wall: Literal["north", "south", "east", "west"] = "south"
 
 
 class Window(BaseModel):
@@ -79,10 +84,16 @@ class Window(BaseModel):
     Args:
         position: 2D position (x, y) in meters.
         width_m: Window width in meters.
+        height_m: Window height in meters.
+        sill_height_m: Height from floor to bottom of window in meters.
+        wall: Which wall the window is on.
     """
 
     position: tuple[float, float]
     width_m: float = Field(gt=0)
+    height_m: float = Field(default=1.2, gt=0)
+    sill_height_m: float = Field(default=0.9, ge=0)
+    wall: Literal["north", "south", "east", "west"] = "west"
 
 
 class ExistingEquipment(BaseModel):
@@ -93,12 +104,22 @@ class ExistingEquipment(BaseModel):
         category: Equipment category (e.g. "printer", "table").
         position: 3D position (x, y, z) in meters.
         confidence: Detection confidence score (0.0 to 1.0).
+        dimensions: Width, depth, height in meters.
+        orientation_deg: Rotation around Z-axis in degrees (0 = aligned with X).
+        rgba: Approximate color from photo (r, g, b, a), normalized 0-1.
+        mounting: Where the item is attached.
+        shape: Geometric primitive for rendering.
     """
 
     name: str
     category: str
     position: tuple[float, float, float]
     confidence: float = Field(ge=0.0, le=1.0)
+    dimensions: tuple[float, float, float] = (0.4, 0.4, 0.8)
+    orientation_deg: float = 0.0
+    rgba: tuple[float, float, float, float] = (0.5, 0.5, 0.5, 1.0)
+    mounting: Literal["floor", "wall", "ceiling"] = "floor"
+    shape: Literal["box", "cylinder"] = "box"
 
 
 class SceneReconstruction(BaseModel):

@@ -1,4 +1,4 @@
-"""Shared test fixtures for Lang2Robo backend tests."""
+"""Shared test fixtures for Robo9 Automate backend tests."""
 
 from pathlib import Path
 

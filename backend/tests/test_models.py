@@ -54,10 +54,28 @@ class TestSpaceModels:
     def test_door_valid(self) -> None:
         door = Door(position=(1.0, 0.0), width_m=0.9)
         assert door.width_m == 0.9
+        assert door.height_m == 2.1
+        assert door.wall == "south"
+
+    def test_door_with_wall(self) -> None:
+        door = Door(position=(3.0, 4.5), width_m=0.9, height_m=2.0, wall="north")
+        assert door.height_m == 2.0
+        assert door.wall == "north"
 
     def test_window_valid(self) -> None:
         window = Window(position=(3.0, 0.0), width_m=1.2)
         assert window.width_m == 1.2
+        assert window.height_m == 1.2
+        assert window.sill_height_m == 0.9
+        assert window.wall == "west"
+
+    def test_window_with_sill(self) -> None:
+        window = Window(
+            position=(0.0, 2.5), width_m=1.5, height_m=1.4,
+            sill_height_m=0.8, wall="east",
+        )
+        assert window.sill_height_m == 0.8
+        assert window.wall == "east"
 
     def test_existing_equipment_valid(self) -> None:
         eq = ExistingEquipment(
@@ -67,6 +85,34 @@ class TestSpaceModels:
             confidence=0.92,
         )
         assert eq.confidence == 0.92
+
+    def test_existing_equipment_with_dimensions(self) -> None:
+        eq = ExistingEquipment(
+            name="desk_1",
+            category="table",
+            position=(2.0, 1.5, 0.0),
+            confidence=0.9,
+            dimensions=(1.2, 0.6, 0.75),
+            orientation_deg=90.0,
+            rgba=(0.3, 0.2, 0.15, 1.0),
+            mounting="floor",
+            shape="box",
+        )
+        assert eq.dimensions == (1.2, 0.6, 0.75)
+        assert eq.orientation_deg == 90.0
+        assert eq.rgba == (0.3, 0.2, 0.15, 1.0)
+        assert eq.mounting == "floor"
+        assert eq.shape == "box"
+
+    def test_existing_equipment_defaults(self) -> None:
+        eq = ExistingEquipment(
+            name="item", category="misc", position=(0, 0, 0), confidence=0.5
+        )
+        assert eq.dimensions == (0.4, 0.4, 0.8)
+        assert eq.orientation_deg == 0.0
+        assert eq.rgba == (0.5, 0.5, 0.5, 1.0)
+        assert eq.mounting == "floor"
+        assert eq.shape == "box"
 
     def test_existing_equipment_rejects_invalid_confidence(self) -> None:
         with pytest.raises(ValueError):
