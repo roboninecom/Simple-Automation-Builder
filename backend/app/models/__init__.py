@@ -1,4 +1,4 @@
-"""Pydantic data models for Lang2Robo."""
+"""Pydantic data models for Robo9 Automate."""
 
 from backend.app.models.equipment import EquipmentEntry, MjcfSource, PlacementRules
 from backend.app.models.iteration import (

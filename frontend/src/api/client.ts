@@ -1,5 +1,5 @@
 /**
- * API client for Lang2Robo backend.
+ * API client for Robo9 Automate backend.
  * All backend communication goes through these typed functions.
  */
 

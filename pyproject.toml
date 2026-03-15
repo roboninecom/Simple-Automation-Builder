@@ -1,5 +1,5 @@
 [project]
-name = "lang2robo"
+name = "robo9-automate"
 version = "0.1.0"
 description = "Text description → robotic cell simulation → iterative improvement"
 requires-python = ">=3.11"
