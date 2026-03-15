@@ -62,8 +62,7 @@ async def build_preview(project_id: str) -> dict:
         "valid": valid,
         "equipment_count": len(space.existing_equipment),
         "warnings": [
-            {"body": w.body_name, "level": w.level, "message": w.message}
-            for w in warnings
+            {"body": w.body_name, "level": w.level, "message": w.message} for w in warnings
         ],
     }
 
@@ -113,8 +112,7 @@ async def adjust_preview(project_id: str, request: AdjustRequest) -> dict:
     return {
         "status": "adjusted",
         "warnings": [
-            {"body": w.body_name, "level": w.level, "message": w.message}
-            for w in warnings
+            {"body": w.body_name, "level": w.level, "message": w.message} for w in warnings
         ],
     }
 

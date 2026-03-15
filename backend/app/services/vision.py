@@ -111,25 +111,30 @@ def validate_analysis(
             _clamp(eq.position[1], 0.0, dims.length_m),
             0.0 if eq.mounting == "floor" else eq.position[2],
         )
-        eq_dims = tuple(
-            _clamp(d, 0.05, max(dims.width_m, dims.length_m))
-            for d in eq.dimensions
-        )
+        eq_dims = tuple(_clamp(d, 0.05, max(dims.width_m, dims.length_m)) for d in eq.dimensions)
         if pos != eq.position or eq_dims != eq.dimensions:
             logger.warning(
                 "Clamped equipment '%s': pos %s→%s, dims %s→%s",
-                eq.name, eq.position, pos, eq.dimensions, eq_dims,
+                eq.name,
+                eq.position,
+                pos,
+                eq.dimensions,
+                eq_dims,
             )
         validated_equipment.append(
-            eq.model_copy(update={
-                "position": pos,
-                "dimensions": eq_dims,
-            })
+            eq.model_copy(
+                update={
+                    "position": pos,
+                    "dimensions": eq_dims,
+                }
+            )
         )
 
-    return analysis.model_copy(update={
-        "existing_equipment": validated_equipment,
-    })
+    return analysis.model_copy(
+        update={
+            "existing_equipment": validated_equipment,
+        }
+    )
 
 
 def _clamp(value: float, min_val: float, max_val: float) -> float:

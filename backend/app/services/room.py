@@ -57,9 +57,7 @@ def generate_room_bodies(
     for wall_name in ("north", "south", "east", "west"):
         wall_doors = [d for d in doors if d.wall == wall_name]
         wall_windows = [w for w in windows if w.wall == wall_name]
-        bodies.append(
-            _make_wall(wall_name, dims, wall_doors, wall_windows)
-        )
+        bodies.append(_make_wall(wall_name, dims, wall_doors, wall_windows))
 
     return bodies
 
@@ -135,12 +133,19 @@ def _make_wall(
     """
     wall_length = _wall_length(wall_name, dims)
     openings = _collect_openings(
-        wall_name, wall_length, dims.ceiling_m, doors, windows,
+        wall_name,
+        wall_length,
+        dims.ceiling_m,
+        doors,
+        windows,
     )
 
     body = ET.Element("body", {"name": f"wall_{wall_name}", "pos": "0 0 0"})
     segments = _split_wall_segments(
-        wall_name, wall_length, dims.ceiling_m, openings,
+        wall_name,
+        wall_length,
+        dims.ceiling_m,
+        openings,
     )
 
     for seg_name, pos, size in segments:
@@ -151,27 +156,35 @@ def _make_wall(
         pos_str = f"{world_pos[0]:.4f} {world_pos[1]:.4f} {world_pos[2]:.4f}"
 
         # Visual geom — semi-transparent, no collision
-        ET.SubElement(body, "geom", {
-            "name": f"{full_name}_vis",
-            "type": "box",
-            "size": size_str,
-            "pos": pos_str,
-            "rgba": _WALL_COLOR_VIS,
-            "contype": "0",
-            "conaffinity": "0",
-            "group": "1",
-        })
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "name": f"{full_name}_vis",
+                "type": "box",
+                "size": size_str,
+                "pos": pos_str,
+                "rgba": _WALL_COLOR_VIS,
+                "contype": "0",
+                "conaffinity": "0",
+                "group": "1",
+            },
+        )
         # Collision geom — invisible, physics only
-        ET.SubElement(body, "geom", {
-            "name": f"{full_name}_col",
-            "type": "box",
-            "size": size_str,
-            "pos": pos_str,
-            "rgba": _WALL_COLOR_COL,
-            "contype": "1",
-            "conaffinity": "1",
-            "group": "3",
-        })
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "name": f"{full_name}_col",
+                "type": "box",
+                "size": size_str,
+                "pos": pos_str,
+                "rgba": _WALL_COLOR_COL,
+                "contype": "1",
+                "conaffinity": "1",
+                "group": "3",
+            },
+        )
 
     return body
 
@@ -235,30 +248,36 @@ def _collect_openings(
         half_w = door.width_m / 2
         if center - half_w < 0 or center + half_w > wall_length:
             logger.warning(
-                "Door on %s wall exceeds wall bounds, clamping", wall_name,
+                "Door on %s wall exceeds wall bounds, clamping",
+                wall_name,
             )
             center = max(half_w, min(center, wall_length - half_w))
-        openings.append(_Opening(
-            center_along_wall=center,
-            width=door.width_m,
-            bottom=0.0,
-            top=min(door.height_m, ceiling),
-        ))
+        openings.append(
+            _Opening(
+                center_along_wall=center,
+                width=door.width_m,
+                bottom=0.0,
+                top=min(door.height_m, ceiling),
+            )
+        )
 
     for window in windows:
         center = _opening_center_along_wall(wall_name, window.position)
         half_w = window.width_m / 2
         if center - half_w < 0 or center + half_w > wall_length:
             logger.warning(
-                "Window on %s wall exceeds wall bounds, clamping", wall_name,
+                "Window on %s wall exceeds wall bounds, clamping",
+                wall_name,
             )
             center = max(half_w, min(center, wall_length - half_w))
-        openings.append(_Opening(
-            center_along_wall=center,
-            width=window.width_m,
-            bottom=window.sill_height_m,
-            top=min(window.sill_height_m + window.height_m, ceiling),
-        ))
+        openings.append(
+            _Opening(
+                center_along_wall=center,
+                width=window.width_m,
+                bottom=window.sill_height_m,
+                top=min(window.sill_height_m + window.height_m, ceiling),
+            )
+        )
 
     openings.sort(key=lambda o: o.center_along_wall)
     return openings
@@ -307,39 +326,47 @@ def _split_wall_segments(
         # Left solid segment
         if left_edge > cursor + 0.001:
             seg_width = left_edge - cursor
-            segments.append((
-                f"seg{idx}_left",
-                (cursor + seg_width / 2, 0.0, ceiling / 2),
-                (seg_width / 2, half_t, ceiling / 2),
-            ))
+            segments.append(
+                (
+                    f"seg{idx}_left",
+                    (cursor + seg_width / 2, 0.0, ceiling / 2),
+                    (seg_width / 2, half_t, ceiling / 2),
+                )
+            )
 
         # Above opening (always present)
         if opening.top < ceiling - 0.001:
             above_h = ceiling - opening.top
-            segments.append((
-                f"seg{idx}_above",
-                (opening.center_along_wall, 0.0, opening.top + above_h / 2),
-                (opening.width / 2, half_t, above_h / 2),
-            ))
+            segments.append(
+                (
+                    f"seg{idx}_above",
+                    (opening.center_along_wall, 0.0, opening.top + above_h / 2),
+                    (opening.width / 2, half_t, above_h / 2),
+                )
+            )
 
         # Below opening (only for windows with sill > 0)
         if opening.bottom > 0.001:
-            segments.append((
-                f"seg{idx}_below",
-                (opening.center_along_wall, 0.0, opening.bottom / 2),
-                (opening.width / 2, half_t, opening.bottom / 2),
-            ))
+            segments.append(
+                (
+                    f"seg{idx}_below",
+                    (opening.center_along_wall, 0.0, opening.bottom / 2),
+                    (opening.width / 2, half_t, opening.bottom / 2),
+                )
+            )
 
         cursor = right_edge
 
     # Right solid segment after last opening
     if cursor < wall_length - 0.001:
         seg_width = wall_length - cursor
-        segments.append((
-            f"seg{len(openings)}_right",
-            (cursor + seg_width / 2, 0.0, ceiling / 2),
-            (seg_width / 2, half_t, ceiling / 2),
-        ))
+        segments.append(
+            (
+                f"seg{len(openings)}_right",
+                (cursor + seg_width / 2, 0.0, ceiling / 2),
+                (seg_width / 2, half_t, ceiling / 2),
+            )
+        )
 
     return segments
 

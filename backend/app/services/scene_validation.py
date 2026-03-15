@@ -155,7 +155,7 @@ def _apply_single_adjustment(
             if geom.get("type") == "box":
                 geom.set(
                     "size",
-                    f"{new_dims[0]/2:.3f} {new_dims[1]/2:.3f} {new_dims[2]/2:.3f}",
+                    f"{new_dims[0] / 2:.3f} {new_dims[1] / 2:.3f} {new_dims[2] / 2:.3f}",
                 )
                 break
 
@@ -211,15 +211,17 @@ def _extract_body_boxes(worldbody: ET.Element) -> list[_BodyBox]:
         if len(size) < 3:
             continue
 
-        boxes.append(_BodyBox(
-            name=name,
-            x_min=pos[0] - size[0],
-            x_max=pos[0] + size[0],
-            y_min=pos[1] - size[1],
-            y_max=pos[1] + size[1],
-            z_min=pos[2] - size[2],
-            z_max=pos[2] + size[2],
-        ))
+        boxes.append(
+            _BodyBox(
+                name=name,
+                x_min=pos[0] - size[0],
+                x_max=pos[0] + size[0],
+                y_min=pos[1] - size[1],
+                y_max=pos[1] + size[1],
+                z_min=pos[2] - size[2],
+                z_max=pos[2] + size[2],
+            )
+        )
 
     return boxes
 
@@ -240,15 +242,21 @@ def _check_bounds(
     warnings: list[SceneWarning] = []
     margin = 0.05
     if box.x_min < -margin or box.x_max > dims.width_m + margin:
-        warnings.append(SceneWarning(
-            body_name=box.name, level="warning",
-            message=f"Outside room X bounds (0–{dims.width_m:.1f}m)",
-        ))
+        warnings.append(
+            SceneWarning(
+                body_name=box.name,
+                level="warning",
+                message=f"Outside room X bounds (0–{dims.width_m:.1f}m)",
+            )
+        )
     if box.y_min < -margin or box.y_max > dims.length_m + margin:
-        warnings.append(SceneWarning(
-            body_name=box.name, level="warning",
-            message=f"Outside room Y bounds (0–{dims.length_m:.1f}m)",
-        ))
+        warnings.append(
+            SceneWarning(
+                body_name=box.name,
+                level="warning",
+                message=f"Outside room Y bounds (0–{dims.length_m:.1f}m)",
+            )
+        )
     return warnings
 
 
@@ -268,15 +276,21 @@ def _check_size(box: _BodyBox) -> list[SceneWarning]:
         ("height", box.z_max - box.z_min),
     ]:
         if size < 0.05:
-            warnings.append(SceneWarning(
-                body_name=box.name, level="info",
-                message=f"Very small {dim_name}: {size:.2f}m",
-            ))
+            warnings.append(
+                SceneWarning(
+                    body_name=box.name,
+                    level="info",
+                    message=f"Very small {dim_name}: {size:.2f}m",
+                )
+            )
         if size > 4.0:
-            warnings.append(SceneWarning(
-                body_name=box.name, level="warning",
-                message=f"Very large {dim_name}: {size:.2f}m",
-            ))
+            warnings.append(
+                SceneWarning(
+                    body_name=box.name,
+                    level="warning",
+                    message=f"Very large {dim_name}: {size:.2f}m",
+                )
+            )
     return warnings
 
 
@@ -290,10 +304,13 @@ def _check_floating(box: _BodyBox) -> list[SceneWarning]:
         Warnings for floating bodies.
     """
     if box.z_min > 0.1:
-        return [SceneWarning(
-            body_name=box.name, level="info",
-            message=f"Floating {box.z_min:.2f}m above floor",
-        )]
+        return [
+            SceneWarning(
+                body_name=box.name,
+                level="info",
+                message=f"Floating {box.z_min:.2f}m above floor",
+            )
+        ]
     return []
 
 
@@ -308,12 +325,15 @@ def _check_overlaps(boxes: list[_BodyBox]) -> list[SceneWarning]:
     """
     warnings: list[SceneWarning] = []
     for i, a in enumerate(boxes):
-        for b in boxes[i + 1:]:
+        for b in boxes[i + 1 :]:
             if _boxes_overlap(a, b):
-                warnings.append(SceneWarning(
-                    body_name=a.name, level="warning",
-                    message=f"Overlaps with '{b.name}'",
-                ))
+                warnings.append(
+                    SceneWarning(
+                        body_name=a.name,
+                        level="warning",
+                        message=f"Overlaps with '{b.name}'",
+                    )
+                )
     return warnings
 
 
@@ -328,9 +348,12 @@ def _boxes_overlap(a: _BodyBox, b: _BodyBox) -> bool:
         True if the boxes overlap in all three axes.
     """
     return (
-        a.x_min < b.x_max and a.x_max > b.x_min
-        and a.y_min < b.y_max and a.y_max > b.y_min
-        and a.z_min < b.z_max and a.z_max > b.z_min
+        a.x_min < b.x_max
+        and a.x_max > b.x_min
+        and a.y_min < b.y_max
+        and a.y_max > b.y_min
+        and a.z_min < b.z_max
+        and a.z_max > b.z_min
     )
 
 
@@ -357,23 +380,33 @@ def _check_door_blocking(
         for box in boxes:
             if door.wall in ("north", "south"):
                 if box.x_min < dx + half_w and box.x_max > dx - half_w:
-                    dist = abs(box.y_min) if door.wall == "south" else abs(
-                        box.y_max - space.dimensions.length_m
+                    dist = (
+                        abs(box.y_min)
+                        if door.wall == "south"
+                        else abs(box.y_max - space.dimensions.length_m)
                     )
                     if dist < clearance:
-                        warnings.append(SceneWarning(
-                            body_name=box.name, level="warning",
-                            message=f"Blocking {door.wall} door",
-                        ))
+                        warnings.append(
+                            SceneWarning(
+                                body_name=box.name,
+                                level="warning",
+                                message=f"Blocking {door.wall} door",
+                            )
+                        )
             else:
                 if box.y_min < dy + half_w and box.y_max > dy - half_w:
-                    dist = abs(box.x_min) if door.wall == "west" else abs(
-                        box.x_max - space.dimensions.width_m
+                    dist = (
+                        abs(box.x_min)
+                        if door.wall == "west"
+                        else abs(box.x_max - space.dimensions.width_m)
                     )
                     if dist < clearance:
-                        warnings.append(SceneWarning(
-                            body_name=box.name, level="warning",
-                            message=f"Blocking {door.wall} door",
-                        ))
+                        warnings.append(
+                            SceneWarning(
+                                body_name=box.name,
+                                level="warning",
+                                message=f"Blocking {door.wall} door",
+                            )
+                        )
 
     return warnings

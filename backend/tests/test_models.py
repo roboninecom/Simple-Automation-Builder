@@ -71,8 +71,11 @@ class TestSpaceModels:
 
     def test_window_with_sill(self) -> None:
         window = Window(
-            position=(0.0, 2.5), width_m=1.5, height_m=1.4,
-            sill_height_m=0.8, wall="east",
+            position=(0.0, 2.5),
+            width_m=1.5,
+            height_m=1.4,
+            sill_height_m=0.8,
+            wall="east",
         )
         assert window.sill_height_m == 0.8
         assert window.wall == "east"
@@ -105,9 +108,7 @@ class TestSpaceModels:
         assert eq.shape == "box"
 
     def test_existing_equipment_defaults(self) -> None:
-        eq = ExistingEquipment(
-            name="item", category="misc", position=(0, 0, 0), confidence=0.5
-        )
+        eq = ExistingEquipment(name="item", category="misc", position=(0, 0, 0), confidence=0.5)
         assert eq.dimensions == (0.4, 0.4, 0.8)
         assert eq.orientation_deg == 0.0
         assert eq.rgba == (0.5, 0.5, 0.5, 1.0)

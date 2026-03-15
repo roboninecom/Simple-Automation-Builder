@@ -26,22 +26,28 @@ def _make_space(tmp_path: Path) -> SpaceModel:
         dimensions=dims,
         existing_equipment=[
             ExistingEquipment(
-                name="desk_1", category="desk",
-                position=(2.0, 1.5, 0.0), confidence=0.9,
+                name="desk_1",
+                category="desk",
+                position=(2.0, 1.5, 0.0),
+                confidence=0.9,
                 dimensions=(1.2, 0.6, 0.75),
                 rgba=(0.25, 0.2, 0.15, 1.0),
             ),
             ExistingEquipment(
-                name="wardrobe_1", category="wardrobe",
-                position=(0.5, 3.0, 0.0), confidence=0.85,
+                name="wardrobe_1",
+                category="wardrobe",
+                position=(0.5, 3.0, 0.0),
+                confidence=0.85,
                 dimensions=(1.0, 0.5, 2.0),
             ),
         ],
         doors=[Door(position=(3.0, 4.0), width_m=0.9, wall="north")],
         windows=[Window(position=(0.0, 2.0), width_m=1.2, wall="west")],
         reconstruction=SceneReconstruction(
-            mesh_path=mesh, mjcf_path=mjcf,
-            pointcloud_path=pc, dimensions=dims,
+            mesh_path=mesh,
+            mjcf_path=mjcf,
+            pointcloud_path=pc,
+            dimensions=dims,
         ),
     )
 

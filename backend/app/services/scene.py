@@ -144,13 +144,16 @@ def _add_visual_settings(root: ET.Element) -> None:
         root: Root mujoco XML element.
     """
     visual = ET.SubElement(root, "visual")
-    ET.SubElement(visual, "headlight", {
-        "ambient": "0.15 0.15 0.15",
-        "diffuse": "0.4 0.4 0.4",
-    })
+    ET.SubElement(
+        visual,
+        "headlight",
+        {
+            "ambient": "0.15 0.15 0.15",
+            "diffuse": "0.4 0.4 0.4",
+        },
+    )
     ET.SubElement(visual, "quality", {"shadowsize": "2048"})
     ET.SubElement(visual, "map", {"znear": "0.01", "zfar": "50"})
-
 
 
 def _add_lighting(
@@ -169,19 +172,27 @@ def _add_lighting(
     cy = dims.length_m / 2
 
     # Main ambient light from ceiling center
-    ET.SubElement(worldbody, "light", {
-        "pos": f"{cx:.2f} {cy:.2f} {dims.ceiling_m:.2f}",
-        "dir": "0 0 -1",
-        "diffuse": "0.6 0.6 0.6",
-        "ambient": "0.3 0.3 0.3",
-    })
+    ET.SubElement(
+        worldbody,
+        "light",
+        {
+            "pos": f"{cx:.2f} {cy:.2f} {dims.ceiling_m:.2f}",
+            "dir": "0 0 -1",
+            "diffuse": "0.6 0.6 0.6",
+            "ambient": "0.3 0.3 0.3",
+        },
+    )
     # Fill light from the side
-    ET.SubElement(worldbody, "light", {
-        "pos": f"0 {cy:.2f} {dims.ceiling_m * 0.7:.2f}",
-        "dir": "1 0 -0.5",
-        "diffuse": "0.3 0.3 0.35",
-        "specular": "0 0 0",
-    })
+    ET.SubElement(
+        worldbody,
+        "light",
+        {
+            "pos": f"0 {cy:.2f} {dims.ceiling_m * 0.7:.2f}",
+            "dir": "1 0 -0.5",
+            "diffuse": "0.3 0.3 0.35",
+            "specular": "0 0 0",
+        },
+    )
     # Sunlight from first window direction if any
     if windows:
         w = windows[0]
@@ -191,13 +202,16 @@ def _add_lighting(
             "east": "-1 0 -0.5",
             "west": "1 0 -0.5",
         }.get(w.wall, "0 0 -1")
-        ET.SubElement(worldbody, "light", {
-            "pos": f"{w.position[0]:.2f} {w.position[1]:.2f} {dims.ceiling_m * 0.8:.2f}",
-            "dir": sun_dir,
-            "diffuse": "0.4 0.4 0.35",
-            "specular": "0.1 0.1 0.1",
-        })
-
+        ET.SubElement(
+            worldbody,
+            "light",
+            {
+                "pos": f"{w.position[0]:.2f} {w.position[1]:.2f} {dims.ceiling_m * 0.8:.2f}",
+                "dir": sun_dir,
+                "diffuse": "0.4 0.4 0.35",
+                "specular": "0.1 0.1 0.1",
+            },
+        )
 
 
 _DEFAULT_DIMENSIONS: dict[str, tuple[float, float, float]] = {
@@ -251,7 +265,8 @@ def _add_existing_equipment(
         euler = f"0 0 {math.radians(eq.orientation_deg):.4f}"
 
         body = ET.SubElement(
-            worldbody, "body",
+            worldbody,
+            "body",
             {"name": eq.name, "pos": pos, "euler": euler},
         )
 
@@ -337,19 +352,31 @@ def _add_simple_box(
     """
     if shape == "cylinder":
         radius = max(dims[0], dims[1]) / 2
-        ET.SubElement(body, "geom", {
-            "name": f"{name}_geom", "type": "cylinder",
-            "size": f"{radius:.3f} {dims[2] / 2:.3f}",
-            "rgba": color,
-            "contype": "1", "conaffinity": "1",
-        })
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "name": f"{name}_geom",
+                "type": "cylinder",
+                "size": f"{radius:.3f} {dims[2] / 2:.3f}",
+                "rgba": color,
+                "contype": "1",
+                "conaffinity": "1",
+            },
+        )
     else:
-        ET.SubElement(body, "geom", {
-            "name": f"{name}_geom", "type": "box",
-            "size": f"{dims[0] / 2:.3f} {dims[1] / 2:.3f} {dims[2] / 2:.3f}",
-            "rgba": color,
-            "contype": "1", "conaffinity": "1",
-        })
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "name": f"{name}_geom",
+                "type": "box",
+                "size": f"{dims[0] / 2:.3f} {dims[1] / 2:.3f} {dims[2] / 2:.3f}",
+                "rgba": color,
+                "contype": "1",
+                "conaffinity": "1",
+            },
+        )
 
 
 def _build_table(
@@ -371,13 +398,19 @@ def _build_table(
     leg_r = 0.025
 
     # Tabletop
-    ET.SubElement(body, "geom", {
-        "name": f"{name}_top", "type": "box",
-        "size": f"{w / 2:.3f} {d / 2:.3f} {top_thick / 2:.3f}",
-        "pos": f"0 0 {h - top_thick / 2:.3f}",
-        "rgba": color,
-        "contype": "1", "conaffinity": "1",
-    })
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_top",
+            "type": "box",
+            "size": f"{w / 2:.3f} {d / 2:.3f} {top_thick / 2:.3f}",
+            "pos": f"0 0 {h - top_thick / 2:.3f}",
+            "rgba": color,
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
     # Legs
     leg_h = h - top_thick
     offsets = [
@@ -387,13 +420,19 @@ def _build_table(
         (-(w / 2 - leg_r), -(d / 2 - leg_r)),
     ]
     for i, (ox, oy) in enumerate(offsets):
-        ET.SubElement(body, "geom", {
-            "name": f"{name}_leg{i}", "type": "box",
-            "size": f"{leg_r:.3f} {leg_r:.3f} {leg_h / 2:.3f}",
-            "pos": f"{ox:.3f} {oy:.3f} {leg_h / 2:.3f}",
-            "rgba": "0.7 0.7 0.72 1",
-            "contype": "1", "conaffinity": "1",
-        })
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "name": f"{name}_leg{i}",
+                "type": "box",
+                "size": f"{leg_r:.3f} {leg_r:.3f} {leg_h / 2:.3f}",
+                "pos": f"{ox:.3f} {oy:.3f} {leg_h / 2:.3f}",
+                "rgba": "0.7 0.7 0.72 1",
+                "contype": "1",
+                "conaffinity": "1",
+            },
+        )
 
 
 def _build_bed(
@@ -416,29 +455,47 @@ def _build_bed(
     headboard_h = 0.3
 
     # Frame
-    ET.SubElement(body, "geom", {
-        "name": f"{name}_frame", "type": "box",
-        "size": f"{w / 2:.3f} {d / 2:.3f} {frame_h / 2:.3f}",
-        "pos": f"0 0 {frame_h / 2:.3f}",
-        "rgba": "0.3 0.22 0.14 1",
-        "contype": "1", "conaffinity": "1",
-    })
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_frame",
+            "type": "box",
+            "size": f"{w / 2:.3f} {d / 2:.3f} {frame_h / 2:.3f}",
+            "pos": f"0 0 {frame_h / 2:.3f}",
+            "rgba": "0.3 0.22 0.14 1",
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
     # Mattress
-    ET.SubElement(body, "geom", {
-        "name": f"{name}_mattress", "type": "box",
-        "size": f"{w / 2:.3f} {d / 2:.3f} {mattress_h / 2:.3f}",
-        "pos": f"0 0 {frame_h + mattress_h / 2:.3f}",
-        "rgba": color,
-        "contype": "1", "conaffinity": "1",
-    })
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_mattress",
+            "type": "box",
+            "size": f"{w / 2:.3f} {d / 2:.3f} {mattress_h / 2:.3f}",
+            "pos": f"0 0 {frame_h + mattress_h / 2:.3f}",
+            "rgba": color,
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
     # Headboard
-    ET.SubElement(body, "geom", {
-        "name": f"{name}_headboard", "type": "box",
-        "size": f"{w / 2:.3f} 0.03 {headboard_h / 2:.3f}",
-        "pos": f"0 {-(d / 2 - 0.03):.3f} {h + headboard_h / 2:.3f}",
-        "rgba": "0.15 0.12 0.1 1",
-        "contype": "1", "conaffinity": "1",
-    })
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_headboard",
+            "type": "box",
+            "size": f"{w / 2:.3f} 0.03 {headboard_h / 2:.3f}",
+            "pos": f"0 {-(d / 2 - 0.03):.3f} {h + headboard_h / 2:.3f}",
+            "rgba": "0.15 0.12 0.1 1",
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
 
 
 def _build_chair(
@@ -460,29 +517,47 @@ def _build_chair(
     backrest_h = 0.3
 
     # Base
-    ET.SubElement(body, "geom", {
-        "name": f"{name}_base", "type": "cylinder",
-        "size": f"{max(w, d) / 2 * 0.7:.3f} {seat_h / 2:.3f}",
-        "pos": f"0 0 {seat_h / 2:.3f}",
-        "rgba": "0.7 0.7 0.72 1",
-        "contype": "1", "conaffinity": "1",
-    })
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_base",
+            "type": "cylinder",
+            "size": f"{max(w, d) / 2 * 0.7:.3f} {seat_h / 2:.3f}",
+            "pos": f"0 0 {seat_h / 2:.3f}",
+            "rgba": "0.7 0.7 0.72 1",
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
     # Seat
-    ET.SubElement(body, "geom", {
-        "name": f"{name}_seat", "type": "box",
-        "size": f"{w / 2:.3f} {d / 2:.3f} 0.03",
-        "pos": f"0 0 {seat_h:.3f}",
-        "rgba": color,
-        "contype": "1", "conaffinity": "1",
-    })
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_seat",
+            "type": "box",
+            "size": f"{w / 2:.3f} {d / 2:.3f} 0.03",
+            "pos": f"0 0 {seat_h:.3f}",
+            "rgba": color,
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
     # Backrest
-    ET.SubElement(body, "geom", {
-        "name": f"{name}_back", "type": "box",
-        "size": f"{w / 2:.3f} 0.03 {backrest_h / 2:.3f}",
-        "pos": f"0 {-(d / 2 - 0.03):.3f} {seat_h + backrest_h / 2:.3f}",
-        "rgba": color,
-        "contype": "1", "conaffinity": "1",
-    })
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_back",
+            "type": "box",
+            "size": f"{w / 2:.3f} 0.03 {backrest_h / 2:.3f}",
+            "pos": f"0 {-(d / 2 - 0.03):.3f} {seat_h + backrest_h / 2:.3f}",
+            "rgba": color,
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
 
 
 _COMPOSITE_BUILDERS = {

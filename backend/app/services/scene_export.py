@@ -65,8 +65,7 @@ def export_scene_data(
         "walls": walls,
         "floor": floor_data,
         "doors": [
-            {"position": list(d.position), "width": d.width_m, "wall": d.wall}
-            for d in space.doors
+            {"position": list(d.position), "width": d.width_m, "wall": d.wall} for d in space.doors
         ],
         "windows": [
             {"position": list(w.position), "width": w.width_m, "wall": w.wall}
@@ -146,8 +145,17 @@ def _guess_category(name: str, _geoms: list[dict]) -> str:
     """
     parts = name.lower().split("_")
     known = {
-        "desk", "table", "chair", "bed", "wardrobe", "shelf",
-        "cabinet", "plant", "monitor", "sofa", "printer",
+        "desk",
+        "table",
+        "chair",
+        "bed",
+        "wardrobe",
+        "shelf",
+        "cabinet",
+        "plant",
+        "monitor",
+        "sofa",
+        "printer",
     }
     for p in parts:
         if p in known:

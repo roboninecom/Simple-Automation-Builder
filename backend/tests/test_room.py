@@ -19,8 +19,12 @@ class TestGenerateRoomBodies:
         bodies = generate_room_bodies(_dims(), [], [])
         names = {b.get("name") for b in bodies}
         assert names == {
-            "room_floor", "room_ceiling",
-            "wall_north", "wall_south", "wall_east", "wall_west",
+            "room_floor",
+            "room_ceiling",
+            "wall_north",
+            "wall_south",
+            "wall_east",
+            "wall_west",
         }
 
     def test_floor_has_collision(self) -> None:
@@ -101,8 +105,11 @@ class TestWallWithWindow:
 
     def test_window_splits_wall_into_four_segment_pairs(self) -> None:
         window = Window(
-            position=(0.0, 2.0), width_m=1.2, height_m=1.2,
-            sill_height_m=0.9, wall="west",
+            position=(0.0, 2.0),
+            width_m=1.2,
+            height_m=1.2,
+            sill_height_m=0.9,
+            wall="west",
         )
         bodies = generate_room_bodies(_dims(), [], [window])
         west = next(b for b in bodies if b.get("name") == "wall_west")
@@ -112,8 +119,11 @@ class TestWallWithWindow:
 
     def test_all_col_geoms_have_collision(self) -> None:
         window = Window(
-            position=(0.0, 2.0), width_m=1.2, height_m=1.2,
-            sill_height_m=0.9, wall="west",
+            position=(0.0, 2.0),
+            width_m=1.2,
+            height_m=1.2,
+            sill_height_m=0.9,
+            wall="west",
         )
         bodies = generate_room_bodies(_dims(), [], [window])
         west = next(b for b in bodies if b.get("name") == "wall_west")
@@ -124,8 +134,11 @@ class TestWallWithWindow:
 
     def test_all_vis_geoms_no_collision(self) -> None:
         window = Window(
-            position=(0.0, 2.0), width_m=1.2, height_m=1.2,
-            sill_height_m=0.9, wall="west",
+            position=(0.0, 2.0),
+            width_m=1.2,
+            height_m=1.2,
+            sill_height_m=0.9,
+            wall="west",
         )
         bodies = generate_room_bodies(_dims(), [], [window])
         west = next(b for b in bodies if b.get("name") == "wall_west")
@@ -141,8 +154,11 @@ class TestWallWithMultipleOpenings:
     def test_door_and_window_on_same_wall(self) -> None:
         door = Door(position=(1.5, 4.0), width_m=0.9, height_m=2.1, wall="north")
         window = Window(
-            position=(3.5, 4.0), width_m=1.0, height_m=1.2,
-            sill_height_m=0.9, wall="north",
+            position=(3.5, 4.0),
+            width_m=1.0,
+            height_m=1.2,
+            sill_height_m=0.9,
+            wall="north",
         )
         bodies = generate_room_bodies(_dims(), [door], [window])
         north = next(b for b in bodies if b.get("name") == "wall_north")
