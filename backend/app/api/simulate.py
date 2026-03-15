@@ -77,7 +77,11 @@ class AdjustRequest(BaseModel):
 
 @router.post("/{project_id}/adjust-preview")
 async def adjust_preview(project_id: str, request: AdjustRequest) -> dict:
-    """Apply adjustments to preview scene and return updated warnings.
+    """Apply adjustments to preview scene AND space_model.json.
+
+    Syncs position changes, deletions, and dimension changes back to
+    the SpaceModel so that downstream steps (build-scene, simulate)
+    use the corrected layout.
 
     Args:
         project_id: Project identifier.
@@ -87,19 +91,71 @@ async def adjust_preview(project_id: str, request: AdjustRequest) -> dict:
         Updated validation warnings.
     """
     space = _load_space_model(project_id)
-    scenes_dir = get_project_dir(project_id) / "scenes"
+    project_dir = get_project_dir(project_id)
+    scenes_dir = project_dir / "scenes"
     preview_path = scenes_dir / "preview.xml"
 
     if not preview_path.exists():
         raise HTTPException(404, "Preview scene not found. Build it first.")
 
     adjust_scene(preview_path, request.adjustments, preview_path)
+
+    # Sync adjustments back to SpaceModel
+    space = _apply_adjustments_to_space(space, request.adjustments)
+    space_path = project_dir / "space_model.json"
+    space_path.write_text(space.model_dump_json(indent=2), encoding="utf-8")
+
     warnings = validate_scene_layout(space, preview_path)
 
     return {
         "status": "adjusted",
         "warnings": [{"body": w.body_name, "level": w.level, "message": w.message} for w in warnings],
     }
+
+
+def _apply_adjustments_to_space(
+    space: SpaceModel,
+    adjustments: list[dict],
+) -> SpaceModel:
+    """Apply adjustments to SpaceModel existing_equipment list.
+
+    Args:
+        space: Current space model.
+        adjustments: List of adjustment dicts.
+
+    Returns:
+        Updated SpaceModel with modified equipment.
+    """
+    import math
+
+    equipment = list(space.existing_equipment)
+
+    for adj in adjustments:
+        name = adj.get("body_name", "")
+
+        if adj.get("remove"):
+            equipment = [eq for eq in equipment if eq.name != name]
+            continue
+
+        for i, eq in enumerate(equipment):
+            if eq.name != name:
+                continue
+
+            updates: dict = {}
+            if "position" in adj:
+                pos = adj["position"]
+                updates["position"] = (pos[0], pos[1], pos[2])
+            if "orientation_deg" in adj:
+                updates["orientation_deg"] = adj["orientation_deg"]
+            if "dimensions" in adj:
+                dims = adj["dimensions"]
+                updates["dimensions"] = (dims[0], dims[1], dims[2])
+
+            if updates:
+                equipment[i] = eq.model_copy(update=updates)
+            break
+
+    return space.model_copy(update={"existing_equipment": equipment})
 
 
 @router.get("/{project_id}/scene-data")
