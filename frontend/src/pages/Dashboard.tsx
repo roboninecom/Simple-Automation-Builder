@@ -12,6 +12,7 @@ import type { PipelinePhase, ProjectStatus } from "@/types";
 const PHASE_TO_STEP: Record<PipelinePhase, string> = {
   upload: "calibrate",
   calibrate: "calibrate",
+  preview: "preview",
   recommend: "simulate",
   "build-scene": "simulate",
   simulate: "results",
@@ -22,6 +23,7 @@ const PHASE_TO_STEP: Record<PipelinePhase, string> = {
 const PHASE_LABELS: Record<PipelinePhase, string> = {
   upload: "Uploaded",
   calibrate: "Calibrated",
+  preview: "Scene Previewed",
   recommend: "Planned",
   "build-scene": "Scene Built",
   simulate: "Simulated",

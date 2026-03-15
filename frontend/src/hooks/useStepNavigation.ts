@@ -13,6 +13,8 @@ export interface StepNavigationCallbacks {
   onUploadComplete: (id: string, dims: Dimensions) => void;
   /** Called after calibration completes. */
   onCalibrationComplete: () => void;
+  /** Called after preview scene is confirmed. */
+  onPreviewComplete: () => void;
   /** Called after recommendation is confirmed. */
   onRecommendationComplete: (rec: Recommendation) => void;
   /** Called after simulation finishes. */
@@ -47,6 +49,12 @@ export function useStepNavigation(
   const onCalibrationComplete = useCallback(() => {
     selfNavigatingRef.current = true;
     refresh();
+    navigate(`/projects/${projectId}/preview`);
+  }, [navigate, projectId, refresh]);
+
+  const onPreviewComplete = useCallback(() => {
+    selfNavigatingRef.current = true;
+    refresh();
     navigate(`/projects/${projectId}/recommend`);
   }, [navigate, projectId, refresh]);
 
@@ -78,6 +86,7 @@ export function useStepNavigation(
   return {
     onUploadComplete,
     onCalibrationComplete,
+    onPreviewComplete,
     onRecommendationComplete,
     onSimulationComplete,
     onIterationComplete,

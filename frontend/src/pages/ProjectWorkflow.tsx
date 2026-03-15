@@ -15,12 +15,13 @@ import { MetricsDashboard } from "@/components/MetricsDashboard";
 import type { PipelinePhase } from "@/types";
 
 /** URL step segments. */
-type Step = "upload" | "calibrate" | "recommend" | "simulate" | "results";
+type Step = "upload" | "calibrate" | "preview" | "recommend" | "simulate" | "results";
 
 /** Step metadata for the progress indicator. */
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload Photos" },
   { key: "calibrate", label: "Calibrate" },
+  { key: "preview", label: "Preview" },
   { key: "recommend", label: "Plan" },
   { key: "simulate", label: "Simulate" },
   { key: "results", label: "Results" },
@@ -28,14 +29,15 @@ const STEPS: { key: Step; label: string }[] = [
 
 /** Ordered phases for guard logic. */
 const PHASE_ORDER: PipelinePhase[] = [
-  "upload", "calibrate", "recommend", "build-scene", "simulate", "iterate",
+  "upload", "calibrate", "preview", "recommend", "build-scene", "simulate", "iterate",
 ];
 
 /** Map URL step to the minimum required pipeline phase. */
 const STEP_MIN_PHASE: Record<Step, PipelinePhase> = {
   upload: "upload",
   calibrate: "upload",
-  recommend: "calibrate",
+  preview: "calibrate",
+  recommend: "preview",
   simulate: "recommend",
   results: "simulate",
 };
@@ -44,6 +46,7 @@ const STEP_MIN_PHASE: Record<Step, PipelinePhase> = {
 const PHASE_TO_STEP: Record<PipelinePhase, Step> = {
   upload: "calibrate",
   calibrate: "calibrate",
+  preview: "preview",
   recommend: "simulate",
   "build-scene": "simulate",
   simulate: "results",
@@ -154,6 +157,17 @@ function StepContent({
   }
   if (currentStep === "calibrate" && projectId && dimensions) {
     return <SceneViewer3D projectId={projectId} dimensions={dimensions} onCalibrated={nav.onCalibrationComplete} />;
+  }
+  if (currentStep === "preview" && projectId) {
+    return (
+      <div style={{ textAlign: "center", padding: 32 }}>
+        <h2>Scene Preview</h2>
+        <p style={{ color: "#888" }}>3D scene editor — coming in next update</p>
+        <button onClick={nav.onPreviewComplete} style={styles.stepActive}>
+          Continue to Plan
+        </button>
+      </div>
+    );
   }
   if (currentStep === "recommend" && projectId) {
     return <RecommendationView projectId={projectId} onConfirm={nav.onRecommendationComplete} />;
