@@ -162,6 +162,16 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
     setSelected(null);
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if (e.key === "Delete" && selected) {
+        handleDelete(selected);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected, handleDelete]);
+
   const handleSaveAndContinue = useCallback(async () => {
     if (dirty.size > 0) {
       try {
