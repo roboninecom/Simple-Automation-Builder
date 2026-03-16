@@ -13,7 +13,7 @@ export function Layout(): React.JSX.Element {
     <div style={styles.container}>
       <header style={styles.header}>
         <Link to="/" style={styles.titleLink}>
-          <h1 style={styles.title}>Lang2Robo</h1>
+          <h1 style={styles.title}>Robo9 Automate</h1>
         </Link>
         <p style={styles.subtitle}>Text → Simulation → Optimization</p>
       </header>

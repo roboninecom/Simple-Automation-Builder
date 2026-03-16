@@ -10,8 +10,8 @@ import type { PipelinePhase, ProjectStatus } from "@/types";
 
 /** Map pipeline phase to the corresponding URL step segment. */
 const PHASE_TO_STEP: Record<PipelinePhase, string> = {
-  upload: "calibrate",
-  calibrate: "calibrate",
+  upload: "scene-editor",
+  "scene-editor": "scene-editor",
   recommend: "simulate",
   "build-scene": "simulate",
   simulate: "results",
@@ -21,7 +21,7 @@ const PHASE_TO_STEP: Record<PipelinePhase, string> = {
 /** Human-readable phase labels. */
 const PHASE_LABELS: Record<PipelinePhase, string> = {
   upload: "Uploaded",
-  calibrate: "Calibrated",
+  "scene-editor": "Scene Ready",
   recommend: "Planned",
   "build-scene": "Scene Built",
   simulate: "Simulated",

@@ -8,19 +8,19 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useProjectState } from "@/hooks/useProjectState";
 import { useStepNavigation } from "@/hooks/useStepNavigation";
 import { PhotoUpload } from "@/components/PhotoUpload";
-import { SceneViewer3D } from "@/components/SceneViewer3D";
 import { RecommendationView } from "@/components/RecommendationView";
 import { SimulationPlayer } from "@/components/SimulationPlayer";
 import { MetricsDashboard } from "@/components/MetricsDashboard";
+import { SceneEditor } from "@/components/SceneEditor";
 import type { PipelinePhase } from "@/types";
 
 /** URL step segments. */
-type Step = "upload" | "calibrate" | "recommend" | "simulate" | "results";
+type Step = "upload" | "scene-editor" | "recommend" | "simulate" | "results";
 
 /** Step metadata for the progress indicator. */
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload Photos" },
-  { key: "calibrate", label: "Calibrate" },
+  { key: "scene-editor", label: "Scene Editor" },
   { key: "recommend", label: "Plan" },
   { key: "simulate", label: "Simulate" },
   { key: "results", label: "Results" },
@@ -28,22 +28,22 @@ const STEPS: { key: Step; label: string }[] = [
 
 /** Ordered phases for guard logic. */
 const PHASE_ORDER: PipelinePhase[] = [
-  "upload", "calibrate", "recommend", "build-scene", "simulate", "iterate",
+  "upload", "scene-editor", "recommend", "build-scene", "simulate", "iterate",
 ];
 
 /** Map URL step to the minimum required pipeline phase. */
 const STEP_MIN_PHASE: Record<Step, PipelinePhase> = {
   upload: "upload",
-  calibrate: "upload",
-  recommend: "calibrate",
+  "scene-editor": "upload",
+  recommend: "scene-editor",
   simulate: "recommend",
   results: "simulate",
 };
 
 /** Map pipeline phase to the furthest reachable URL step. */
 const PHASE_TO_STEP: Record<PipelinePhase, Step> = {
-  upload: "calibrate",
-  calibrate: "calibrate",
+  upload: "scene-editor",
+  "scene-editor": "scene-editor",
   recommend: "simulate",
   "build-scene": "simulate",
   simulate: "results",
@@ -69,7 +69,7 @@ export function ProjectWorkflow(): React.JSX.Element {
   const navigate = useNavigate();
   const currentStep = (step ?? "upload") as Step;
 
-  const { status, dimensions, simResult, iterationHistory, loading, error, refresh } =
+  const { status, simResult, iterationHistory, loading, error, refresh } =
     useProjectState(projectId ?? null);
 
   const nav = useStepNavigation(projectId, refresh);
@@ -89,7 +89,6 @@ export function ProjectWorkflow(): React.JSX.Element {
       <StepContent
         currentStep={currentStep}
         projectId={projectId}
-        dimensions={dimensions}
         simResult={simResult}
         iterationHistory={iterationHistory}
         nav={nav}
@@ -137,14 +136,12 @@ function useStepGuard(
 function StepContent({
   currentStep,
   projectId,
-  dimensions,
   simResult,
   iterationHistory,
   nav,
 }: {
   currentStep: Step;
   projectId: string | undefined;
-  dimensions: import("@/types").Dimensions | null;
   simResult: import("@/types").SimResult | null;
   iterationHistory: import("@/types").IterationLog[];
   nav: ReturnType<typeof useStepNavigation>;
@@ -152,8 +149,14 @@ function StepContent({
   if (currentStep === "upload") {
     return <PhotoUpload onComplete={nav.onUploadComplete} />;
   }
-  if (currentStep === "calibrate" && projectId && dimensions) {
-    return <SceneViewer3D projectId={projectId} dimensions={dimensions} onCalibrated={nav.onCalibrationComplete} />;
+  if (currentStep === "scene-editor" && projectId) {
+    return (
+      <SceneEditor
+        projectId={projectId}
+        onConfirm={nav.onSceneEditorComplete}
+        onBack={nav.onBack}
+      />
+    );
   }
   if (currentStep === "recommend" && projectId) {
     return <RecommendationView projectId={projectId} onConfirm={nav.onRecommendationComplete} />;

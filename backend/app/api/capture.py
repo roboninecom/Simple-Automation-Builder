@@ -8,7 +8,12 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from backend.app.core.claude import get_claude_client
-from backend.app.models.space import ReferenceCalibration, SceneReconstruction, SpaceModel
+from backend.app.models.space import (
+    DimensionCalibration,
+    ReferenceCalibration,
+    SceneReconstruction,
+    SpaceModel,
+)
 from backend.app.services.project_status import (
     advance_phase,
     create_project_status,
@@ -16,8 +21,11 @@ from backend.app.services.project_status import (
 )
 from backend.app.services.reconstruction import (
     calibrate_scale,
+    calibrate_scale_from_dimensions,
     reconstruct_scene,
 )
+from backend.app.services.scene import generate_preview_scene
+from backend.app.services.scene_export import export_scene_data
 from backend.app.services.vision import analyze_scene, build_space_model
 
 __all__ = ["router"]
@@ -97,9 +105,101 @@ async def calibrate_and_analyze(
         space_model.model_dump_json(indent=2),
         encoding="utf-8",
     )
-    advance_phase(project_id, "calibrate")
+    advance_phase(project_id, "scene-editor")
 
     return space_model
+
+
+@router.post("/{project_id}/calibrate-dimensions")
+async def calibrate_with_dimensions(
+    project_id: str,
+    calibration: DimensionCalibration,
+) -> SpaceModel:
+    """Calibrate scale using direct room dimensions and run Vision analysis.
+
+    Args:
+        project_id: Project identifier from upload.
+        calibration: Real room width, length, ceiling.
+
+    Returns:
+        Complete SpaceModel with zones, equipment, doors, windows.
+    """
+    project_dir = get_project_dir(project_id)
+    if not project_dir.exists():
+        raise HTTPException(404, f"Project {project_id} not found")
+
+    reconstruction = _load_reconstruction_meta(project_dir)
+    calibrated = calibrate_scale_from_dimensions(reconstruction, calibration)
+
+    photos_dir = project_dir / "photos"
+    photo_files = _list_photos(photos_dir)
+
+    client = get_claude_client()
+    analysis = await analyze_scene(client, photo_files, calibrated)
+
+    space_model = build_space_model(calibrated, analysis)
+
+    space_path = project_dir / "space_model.json"
+    space_path.write_text(
+        space_model.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+    _save_reconstruction_meta(project_dir, calibrated)
+
+    return space_model
+
+
+@router.post("/{project_id}/calibrate-and-build")
+async def calibrate_and_build(
+    project_id: str,
+    calibration: DimensionCalibration,
+) -> dict:
+    """Calibrate, analyze with Vision, build preview, return scene data.
+
+    Single endpoint that performs the full calibration pipeline and
+    returns scene data ready for the Three.js editor.
+
+    Args:
+        project_id: Project identifier.
+        calibration: Real room dimensions.
+
+    Returns:
+        Scene data for Three.js and SpaceModel summary.
+    """
+    project_dir = get_project_dir(project_id)
+    if not project_dir.exists():
+        raise HTTPException(404, f"Project {project_id} not found")
+
+    reconstruction = _load_reconstruction_meta(project_dir)
+    calibrated = calibrate_scale_from_dimensions(reconstruction, calibration)
+
+    photos_dir = project_dir / "photos"
+    photo_files = _list_photos(photos_dir)
+
+    client = get_claude_client()
+    analysis = await analyze_scene(client, photo_files, calibrated)
+    space_model = build_space_model(calibrated, analysis)
+
+    space_path = project_dir / "space_model.json"
+    space_path.write_text(
+        space_model.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+    _save_reconstruction_meta(project_dir, calibrated)
+
+    preview_path = project_dir / "scenes" / "preview.xml"
+    generate_preview_scene(space_model, preview_path)
+
+    scene_data = export_scene_data(preview_path, space_model)
+
+    advance_phase(project_id, "scene-editor")
+
+    return {
+        "scene_data": scene_data,
+        "equipment_count": len(space_model.existing_equipment),
+        "dimensions": calibration.model_dump(),
+    }
 
 
 @router.get("/{project_id}/pointcloud")

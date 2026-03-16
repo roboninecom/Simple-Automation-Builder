@@ -9,12 +9,13 @@ from backend.app.core.config import get_settings
 from backend.app.core.prompts import load_prompt
 from backend.app.models.space import (
     Dimensions,
+    ExistingEquipment,
     SceneAnalysis,
     SceneReconstruction,
     SpaceModel,
 )
 
-__all__ = ["analyze_scene", "build_space_model"]
+__all__ = ["analyze_scene", "build_space_model", "validate_analysis"]
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ async def analyze_scene(
     Args:
         client: Claude API client.
         photos: List of room photo file paths.
-        reconstruction: DISCOVERSE reconstruction result.
+        reconstruction: Scene reconstruction result.
 
     Returns:
         Structured scene analysis with zones, equipment, doors, windows.
@@ -52,7 +53,8 @@ async def analyze_scene(
                 text=text,
                 model=get_settings().vision_model,
             )
-            return _parse_analysis_response(response)
+            analysis = _parse_analysis_response(response)
+            return validate_analysis(analysis, dims)
         except (ValueError, json.JSONDecodeError) as exc:
             last_error = exc
             logger.warning(
@@ -74,7 +76,7 @@ def build_space_model(
     """Merge reconstruction and analysis into a complete SpaceModel.
 
     Args:
-        reconstruction: DISCOVERSE reconstruction data.
+        reconstruction: Scene reconstruction data.
         analysis: Claude Vision analysis results.
 
     Returns:
@@ -90,6 +92,89 @@ def build_space_model(
     )
 
 
+def validate_analysis(
+    analysis: SceneAnalysis,
+    dims: Dimensions,
+) -> SceneAnalysis:
+    """Validate and clamp analysis values to reasonable ranges.
+
+    Args:
+        analysis: Parsed scene analysis from Claude.
+        dims: Room dimensions for bounds checking.
+
+    Returns:
+        Validated SceneAnalysis with clamped values.
+    """
+    validated_equipment = []
+    for eq in analysis.existing_equipment:
+        eq_dims = tuple(_clamp(d, 0.05, max(dims.width_m, dims.length_m)) for d in eq.dimensions)
+        pos_z = _compute_center_z(eq, eq_dims[2], dims.ceiling_m)
+        pos = (
+            _clamp(eq.position[0], 0.0, dims.width_m),
+            _clamp(eq.position[1], 0.0, dims.length_m),
+            pos_z,
+        )
+        if pos != eq.position or eq_dims != eq.dimensions:
+            logger.warning(
+                "Clamped equipment '%s': pos %s→%s, dims %s→%s",
+                eq.name,
+                eq.position,
+                pos,
+                eq.dimensions,
+                eq_dims,
+            )
+        validated_equipment.append(
+            eq.model_copy(
+                update={
+                    "position": pos,
+                    "dimensions": eq_dims,
+                }
+            )
+        )
+
+    return analysis.model_copy(
+        update={
+            "existing_equipment": validated_equipment,
+        }
+    )
+
+
+def _compute_center_z(
+    eq: ExistingEquipment,
+    height: float,
+    ceiling_m: float,
+) -> float:
+    """Compute body-center Z position based on mounting type.
+
+    Args:
+        eq: Equipment entry.
+        height: Equipment height in meters.
+        ceiling_m: Room ceiling height.
+
+    Returns:
+        Z coordinate for the body center.
+    """
+    if eq.mounting == "floor":
+        return height / 2
+    if eq.mounting == "ceiling":
+        return ceiling_m - height / 2
+    return eq.position[2]
+
+
+def _clamp(value: float, min_val: float, max_val: float) -> float:
+    """Clamp a value to a range.
+
+    Args:
+        value: Value to clamp.
+        min_val: Minimum allowed value.
+        max_val: Maximum allowed value.
+
+    Returns:
+        Clamped value.
+    """
+    return max(min_val, min(value, max_val))
+
+
 def _format_analysis_request(dims: Dimensions) -> str:
     """Format the text portion of the vision analysis request.
 
@@ -99,19 +184,24 @@ def _format_analysis_request(dims: Dimensions) -> str:
     Returns:
         Formatted request text.
     """
-
     return (
         f"Room dimensions from 3D reconstruction:\n"
-        f"  Width: {dims.width_m:.2f}m\n"
-        f"  Length: {dims.length_m:.2f}m\n"
-        f"  Ceiling: {dims.ceiling_m:.2f}m\n"
+        f"  Width (X-axis): {dims.width_m:.2f}m\n"
+        f"  Length (Y-axis): {dims.length_m:.2f}m\n"
+        f"  Ceiling height: {dims.ceiling_m:.2f}m\n"
         f"  Area: {dims.area_m2:.2f}m²\n\n"
-        f"Analyze these photos and identify:\n"
+        f"Wall reference:\n"
+        f"  North wall: Y = {dims.length_m:.2f}\n"
+        f"  South wall: Y = 0\n"
+        f"  East wall: X = {dims.width_m:.2f}\n"
+        f"  West wall: X = 0\n\n"
+        f"Analyze these photos and return a JSON with:\n"
         f"1. Functional zones (name, polygon, area)\n"
-        f"2. Existing equipment (name, category, position, confidence)\n"
-        f"3. Doors (position, width)\n"
-        f"4. Windows (position, width)\n\n"
-        f"Return ONLY valid JSON matching the SceneAnalysis schema."
+        f"2. Existing equipment with estimated dimensions [w, d, h], "
+        f"orientation_deg, rgba color, mounting type, shape\n"
+        f"3. Doors with wall assignment and height\n"
+        f"4. Windows with wall assignment, height, and sill_height_m\n\n"
+        f"Return ONLY valid JSON matching the schema in the system prompt."
     )
 
 

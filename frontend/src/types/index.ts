@@ -35,12 +35,17 @@ export interface Zone {
 export interface Door {
   position: [number, number];
   width_m: number;
+  height_m: number;
+  wall: "north" | "south" | "east" | "west";
 }
 
 /** Window detected in the room. */
 export interface Window {
   position: [number, number];
   width_m: number;
+  height_m: number;
+  sill_height_m: number;
+  wall: "north" | "south" | "east" | "west";
 }
 
 /** Equipment already present in the room. */
@@ -50,9 +55,17 @@ export interface ExistingEquipment {
   position: [number, number, number];
   /** Detection confidence 0.0–1.0. */
   confidence: number;
+  /** Width, depth, height in meters. */
+  dimensions: [number, number, number];
+  /** Rotation around Z-axis in degrees. */
+  orientation_deg: number;
+  /** Approximate color (r, g, b, a), normalized 0–1. */
+  rgba: [number, number, number, number];
+  mounting: "floor" | "wall" | "ceiling";
+  shape: "box" | "cylinder";
 }
 
-/** Result of DISCOVERSE Real2Sim reconstruction. */
+/** Result of pycolmap scene reconstruction. */
 export interface SceneReconstruction {
   mesh_path: string;
   mjcf_path: string;
@@ -215,7 +228,7 @@ export interface IterationLog {
 /** Pipeline phase identifiers. */
 export type PipelinePhase =
   | "upload"
-  | "calibrate"
+  | "scene-editor"
   | "recommend"
   | "build-scene"
   | "simulate"

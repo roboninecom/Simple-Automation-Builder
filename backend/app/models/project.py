@@ -17,7 +17,14 @@ __all__ = [
     "ProjectDetail",
 ]
 
-PipelinePhase = Literal["upload", "calibrate", "recommend", "build-scene", "simulate", "iterate"]
+PipelinePhase = Literal[
+    "upload",
+    "scene-editor",
+    "recommend",
+    "build-scene",
+    "simulate",
+    "iterate",
+]
 
 
 class PhaseRecord(BaseModel):

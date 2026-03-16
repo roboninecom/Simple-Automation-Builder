@@ -25,7 +25,7 @@ def create_app() -> FastAPI:
         Configured FastAPI instance with CORS, routes, and static files.
     """
     application = FastAPI(
-        title="Lang2Robo",
+        title="Robo9 Automate",
         description="Text description → robotic cell simulation → iterative improvement",
         version="0.1.0",
     )

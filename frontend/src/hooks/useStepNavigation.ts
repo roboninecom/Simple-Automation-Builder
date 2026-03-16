@@ -11,8 +11,10 @@ import type { Dimensions, IterationLog, Recommendation, SimResult } from "@/type
 export interface StepNavigationCallbacks {
   /** Called after photo upload completes. */
   onUploadComplete: (id: string, dims: Dimensions) => void;
-  /** Called after calibration completes. */
-  onCalibrationComplete: () => void;
+  /** Navigate back (marks as self-navigation to skip guard). */
+  onBack: () => void;
+  /** Called after scene editor is confirmed. */
+  onSceneEditorComplete: () => void;
   /** Called after recommendation is confirmed. */
   onRecommendationComplete: (rec: Recommendation) => void;
   /** Called after simulation finishes. */
@@ -39,12 +41,17 @@ export function useStepNavigation(
   const onUploadComplete = useCallback(
     (id: string, _dims: Dimensions) => {
       selfNavigatingRef.current = true;
-      navigate(`/projects/${id}/calibrate`);
+      navigate(`/projects/${id}/scene-editor`);
     },
     [navigate],
   );
 
-  const onCalibrationComplete = useCallback(() => {
+  const onBack = useCallback(() => {
+    selfNavigatingRef.current = true;
+    window.history.back();
+  }, []);
+
+  const onSceneEditorComplete = useCallback(() => {
     selfNavigatingRef.current = true;
     refresh();
     navigate(`/projects/${projectId}/recommend`);
@@ -77,7 +84,8 @@ export function useStepNavigation(
 
   return {
     onUploadComplete,
-    onCalibrationComplete,
+    onBack,
+    onSceneEditorComplete,
     onRecommendationComplete,
     onSimulationComplete,
     onIterationComplete,

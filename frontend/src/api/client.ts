@@ -1,5 +1,5 @@
 /**
- * API client for Lang2Robo backend.
+ * API client for Robo9 Automate backend.
  * All backend communication goes through these typed functions.
  */
 
@@ -119,6 +119,109 @@ export async function generateRecommendation(
   return apiFetch<Recommendation>("/recommend", {
     method: "POST",
     body: JSON.stringify({ project_id: projectId, scenario } satisfies RecommendRequest),
+  });
+}
+
+/** Scene body data for Three.js editor. */
+export interface SceneGeom {
+  name: string;
+  type: string;
+  size: number[];
+  pos: number[];
+  rgba: number[];
+}
+
+/** Scene body data for Three.js editor. */
+export interface SceneBody {
+  name: string;
+  category: string;
+  position: number[];
+  euler: number[];
+  geoms: SceneGeom[];
+}
+
+/** Full scene data for Three.js editor. */
+export interface SceneData {
+  room: { width: number; length: number; ceiling: number };
+  bodies: SceneBody[];
+  walls: SceneGeom[];
+  floor: SceneGeom;
+  doors: { position: number[]; width: number; wall: string }[];
+  windows: { position: number[]; width: number; wall: string }[];
+}
+
+/** Scene adjustment request. */
+export interface SceneAdjustment {
+  body_name: string;
+  position?: [number, number, number];
+  orientation_deg?: number;
+  dimensions?: [number, number, number];
+  remove?: boolean;
+}
+
+/**
+ * Calibrate scale using direct room dimensions.
+ * @param projectId - Project identifier.
+ * @param dims - Real room dimensions.
+ * @returns SpaceModel after calibration + Vision analysis.
+ */
+export async function calibrateDimensions(
+  projectId: string,
+  dims: { width_m: number; length_m: number; ceiling_m: number },
+): Promise<SpaceModel> {
+  return apiFetch<SpaceModel>(`/capture/${projectId}/calibrate-dimensions`, {
+    method: "POST",
+    body: JSON.stringify(dims),
+  });
+}
+
+/**
+ * Calibrate, analyze, build preview, and return scene data in one call.
+ * @param projectId - Project identifier.
+ * @param dims - Real room dimensions.
+ * @returns Scene data ready for Three.js editor.
+ */
+export async function calibrateAndBuild(
+  projectId: string,
+  dims: { width_m: number; length_m: number; ceiling_m: number },
+): Promise<{ scene_data: SceneData; equipment_count: number }> {
+  return apiFetch(`/capture/${projectId}/calibrate-and-build`, {
+    method: "POST",
+    body: JSON.stringify(dims),
+  });
+}
+
+/**
+ * Build preview scene (room + furniture, no recommendation).
+ * @param projectId - Project identifier.
+ * @returns Build result with warnings.
+ */
+export async function buildPreviewScene(projectId: string): Promise<{ valid: boolean; warnings: unknown[] }> {
+  return apiFetch(`/projects/${projectId}/build-preview`, { method: "POST" });
+}
+
+/**
+ * Get scene data as JSON for Three.js editor.
+ * @param projectId - Project identifier.
+ * @returns Scene data with bodies, walls, floor.
+ */
+export async function getSceneData(projectId: string): Promise<SceneData> {
+  return apiFetch<SceneData>(`/projects/${projectId}/scene-data`);
+}
+
+/**
+ * Apply adjustments to the preview scene.
+ * @param projectId - Project identifier.
+ * @param adjustments - List of body adjustments.
+ * @returns Updated warnings.
+ */
+export async function adjustPreviewScene(
+  projectId: string,
+  adjustments: SceneAdjustment[],
+): Promise<{ warnings: unknown[] }> {
+  return apiFetch(`/projects/${projectId}/adjust-preview`, {
+    method: "POST",
+    body: JSON.stringify({ adjustments }),
   });
 }
 

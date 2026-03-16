@@ -1,10 +1,12 @@
 """Space and scene models for room capture and reconstruction."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 __all__ = [
+    "DimensionCalibration",
     "Dimensions",
     "Door",
     "ExistingEquipment",
@@ -29,6 +31,20 @@ class ReferenceCalibration(BaseModel):
     point_a: tuple[float, float, float]
     point_b: tuple[float, float, float]
     real_distance_m: float = Field(gt=0)
+
+
+class DimensionCalibration(BaseModel):
+    """Calibration via direct room dimensions input.
+
+    Args:
+        width_m: Real room width in meters.
+        length_m: Real room length in meters.
+        ceiling_m: Real ceiling height in meters.
+    """
+
+    width_m: float = Field(gt=0)
+    length_m: float = Field(gt=0)
+    ceiling_m: float = Field(default=2.7, gt=0)
 
 
 class Dimensions(BaseModel):
@@ -67,10 +83,14 @@ class Door(BaseModel):
     Args:
         position: 2D position (x, y) in meters.
         width_m: Door width in meters.
+        height_m: Door height in meters.
+        wall: Which wall the door is on.
     """
 
     position: tuple[float, float]
     width_m: float = Field(gt=0)
+    height_m: float = Field(default=2.1, gt=0)
+    wall: Literal["north", "south", "east", "west"] = "south"
 
 
 class Window(BaseModel):
@@ -79,10 +99,16 @@ class Window(BaseModel):
     Args:
         position: 2D position (x, y) in meters.
         width_m: Window width in meters.
+        height_m: Window height in meters.
+        sill_height_m: Height from floor to bottom of window in meters.
+        wall: Which wall the window is on.
     """
 
     position: tuple[float, float]
     width_m: float = Field(gt=0)
+    height_m: float = Field(default=1.2, gt=0)
+    sill_height_m: float = Field(default=0.9, ge=0)
+    wall: Literal["north", "south", "east", "west"] = "west"
 
 
 class ExistingEquipment(BaseModel):
@@ -93,16 +119,26 @@ class ExistingEquipment(BaseModel):
         category: Equipment category (e.g. "printer", "table").
         position: 3D position (x, y, z) in meters.
         confidence: Detection confidence score (0.0 to 1.0).
+        dimensions: Width, depth, height in meters.
+        orientation_deg: Rotation around Z-axis in degrees (0 = aligned with X).
+        rgba: Approximate color from photo (r, g, b, a), normalized 0-1.
+        mounting: Where the item is attached.
+        shape: Geometric primitive for rendering.
     """
 
     name: str
     category: str
     position: tuple[float, float, float]
     confidence: float = Field(ge=0.0, le=1.0)
+    dimensions: tuple[float, float, float] = (0.4, 0.4, 0.8)
+    orientation_deg: float = 0.0
+    rgba: tuple[float, float, float, float] = (0.5, 0.5, 0.5, 1.0)
+    mounting: Literal["floor", "wall", "ceiling"] = "floor"
+    shape: Literal["box", "cylinder"] = "box"
 
 
 class SceneReconstruction(BaseModel):
-    """Result of DISCOVERSE Real2Sim reconstruction.
+    """Result of pycolmap scene reconstruction.
 
     Args:
         mesh_path: Path to the reconstructed mesh file.
@@ -142,7 +178,7 @@ class SpaceModel(BaseModel):
         existing_equipment: Equipment already in the room.
         doors: Doors.
         windows: Windows.
-        reconstruction: Reference to DISCOVERSE reconstruction data.
+        reconstruction: Reference to scene reconstruction data.
     """
 
     dimensions: Dimensions

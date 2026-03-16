@@ -11,10 +11,11 @@ from backend.app.models.recommendation import (
     Recommendation,
     WorkObject,
 )
-from backend.app.models.space import Dimensions, SpaceModel
+from backend.app.models.space import Dimensions, ExistingEquipment, SpaceModel
 from backend.app.services.downloader import find_mjcf_in_dir
+from backend.app.services.room import generate_room_bodies
 
-__all__ = ["generate_mjcf_scene", "validate_mjcf"]
+__all__ = ["generate_mjcf_scene", "generate_preview_scene", "validate_mjcf"]
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,31 @@ def generate_mjcf_scene(
     return output_path
 
 
+def generate_preview_scene(
+    space: SpaceModel,
+    output_path: Path,
+) -> Path:
+    """Build preview MJCF: room + existing furniture, no recommendation equipment.
+
+    Args:
+        space: Room model with reconstruction and existing equipment.
+        output_path: Path for output MJCF file.
+
+    Returns:
+        Path to the generated preview MJCF file.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    root = _create_base_scene(space)
+    worldbody = root.find("worldbody")
+
+    _add_existing_equipment(worldbody, space)
+
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="  ")
+    tree.write(str(output_path), encoding="unicode", xml_declaration=False)
+    return output_path
+
+
 def validate_mjcf(scene_path: Path) -> bool:
     """Validate that a MJCF file can be loaded by MuJoCo.
 
@@ -91,188 +117,454 @@ def _create_base_scene(space: SpaceModel) -> ET.Element:
         Root mujoco XML element.
     """
     dims = space.dimensions
-    root = ET.Element("mujoco", model="lang2robo_scene")
+    root = ET.Element("mujoco", model="robo9_automate_scene")
+
+    _add_visual_settings(root)
 
     option = ET.SubElement(root, "option")
     option.set("gravity", "0 0 -9.81")
     option.set("timestep", "0.002")
 
-    asset = ET.SubElement(root, "asset")
-    _add_texture_and_material(asset)
-    _include_room_mesh(asset, space)
+    ET.SubElement(root, "asset")
 
     worldbody = ET.SubElement(root, "worldbody")
-    _add_lighting(worldbody, dims)
-    _add_floor(worldbody, dims)
-    _add_room_body(worldbody, space)
+    _add_lighting(worldbody, dims, space.windows)
+
+    room_bodies = generate_room_bodies(dims, space.doors, space.windows)
+    for body in room_bodies:
+        worldbody.append(body)
 
     return root
 
 
-def _add_texture_and_material(asset: ET.Element) -> None:
-    """Add default textures and materials to asset element.
+def _add_visual_settings(root: ET.Element) -> None:
+    """Add MuJoCo visual settings for better rendering.
 
     Args:
-        asset: Asset XML element.
+        root: Root mujoco XML element.
     """
+    visual = ET.SubElement(root, "visual")
     ET.SubElement(
-        asset,
-        "texture",
+        visual,
+        "headlight",
         {
-            "name": "grid",
-            "type": "2d",
-            "builtin": "checker",
-            "width": "512",
-            "height": "512",
-            "rgb1": "0.8 0.8 0.8",
-            "rgb2": "0.6 0.6 0.6",
+            "ambient": "0.15 0.15 0.15",
+            "diffuse": "0.4 0.4 0.4",
         },
     )
-    ET.SubElement(
-        asset,
-        "material",
-        {
-            "name": "grid_mat",
-            "texture": "grid",
-            "texrepeat": "4 4",
-            "reflectance": "0.1",
-        },
-    )
-
-
-def _include_room_mesh(
-    asset: ET.Element,
-    space: SpaceModel,
-) -> None:
-    """Include room mesh from DISCOVERSE reconstruction.
-
-    Args:
-        asset: Asset XML element.
-        space: Room model with reconstruction paths.
-    """
-    mesh_path = space.reconstruction.mesh_path
-    if mesh_path.exists() and _is_valid_mesh(mesh_path):
-        ET.SubElement(
-            asset,
-            "mesh",
-            {
-                "name": "room_mesh",
-                "file": str(mesh_path).replace("\\", "/"),
-            },
-        )
+    ET.SubElement(visual, "quality", {"shadowsize": "2048"})
+    ET.SubElement(visual, "map", {"znear": "0.01", "zfar": "50"})
 
 
 def _add_lighting(
     worldbody: ET.Element,
     dims: Dimensions,
+    windows: list | None = None,
 ) -> None:
-    """Add scene lighting.
+    """Add multi-point lighting: ambient + fill + optional sunlight from windows.
 
     Args:
         worldbody: Worldbody XML element.
         dims: Room dimensions for positioning.
+        windows: Windows for directional sunlight.
     """
     cx = dims.width_m / 2
     cy = dims.length_m / 2
+
+    # Main ambient light from ceiling center
     ET.SubElement(
         worldbody,
         "light",
         {
             "pos": f"{cx:.2f} {cy:.2f} {dims.ceiling_m:.2f}",
             "dir": "0 0 -1",
-            "diffuse": "1 1 1",
+            "diffuse": "0.6 0.6 0.6",
+            "ambient": "0.3 0.3 0.3",
         },
     )
-
-
-def _add_floor(
-    worldbody: ET.Element,
-    dims: Dimensions,
-) -> None:
-    """Add floor plane.
-
-    Args:
-        worldbody: Worldbody XML element.
-        dims: Room dimensions for sizing.
-    """
-    sx = dims.width_m / 2
-    sy = dims.length_m / 2
+    # Fill light from the side
     ET.SubElement(
         worldbody,
-        "geom",
+        "light",
         {
-            "name": "floor",
-            "type": "plane",
-            "size": f"{sx:.2f} {sy:.2f} 0.01",
-            "material": "grid_mat",
+            "pos": f"0 {cy:.2f} {dims.ceiling_m * 0.7:.2f}",
+            "dir": "1 0 -0.5",
+            "diffuse": "0.3 0.3 0.35",
+            "specular": "0 0 0",
         },
     )
-
-
-def _add_room_body(
-    worldbody: ET.Element,
-    space: SpaceModel,
-) -> None:
-    """Add room mesh as visual body.
-
-    Args:
-        worldbody: Worldbody XML element.
-        space: Room model.
-    """
-    mesh_path = space.reconstruction.mesh_path
-    if mesh_path.exists() and _is_valid_mesh(mesh_path):
-        body = ET.SubElement(
-            worldbody,
-            "body",
-            {
-                "name": "room",
-                "pos": "0 0 0",
-            },
-        )
+    # Sunlight from first window direction if any
+    if windows:
+        w = windows[0]
+        sun_dir = {
+            "north": "0 -1 -0.5",
+            "south": "0 1 -0.5",
+            "east": "-1 0 -0.5",
+            "west": "1 0 -0.5",
+        }.get(w.wall, "0 0 -1")
         ET.SubElement(
-            body,
-            "geom",
+            worldbody,
+            "light",
             {
-                "name": "room_visual",
-                "type": "mesh",
-                "mesh": "room_mesh",
-                "contype": "0",
-                "conaffinity": "0",
-                "rgba": "0.9 0.9 0.9 0.3",
+                "pos": f"{w.position[0]:.2f} {w.position[1]:.2f} {dims.ceiling_m * 0.8:.2f}",
+                "dir": sun_dir,
+                "diffuse": "0.4 0.4 0.35",
+                "specular": "0.1 0.1 0.1",
             },
         )
+
+
+_DEFAULT_DIMENSIONS: dict[str, tuple[float, float, float]] = {
+    "table": (1.2, 0.6, 0.75),
+    "desk": (1.2, 0.6, 0.75),
+    "chair": (0.55, 0.55, 0.9),
+    "bed": (1.6, 2.0, 0.5),
+    "wardrobe": (1.2, 0.6, 2.0),
+    "shelf": (0.8, 0.3, 1.8),
+    "cabinet": (0.8, 0.4, 0.8),
+    "appliance": (0.6, 0.3, 0.3),
+    "plant": (0.4, 0.4, 1.0),
+    "monitor": (0.6, 0.2, 0.4),
+    "printer": (0.4, 0.4, 0.35),
+    "sofa": (1.8, 0.85, 0.75),
+}
+
+_DEFAULT_COLORS: dict[str, str] = {
+    "table": "0.35 0.25 0.15 1",
+    "desk": "0.25 0.20 0.15 1",
+    "chair": "0.2 0.2 0.2 1",
+    "bed": "0.75 0.65 0.4 1",
+    "wardrobe": "0.15 0.15 0.15 0.7",
+    "shelf": "0.6 0.5 0.35 1",
+    "plant": "0.2 0.5 0.2 1",
+    "appliance": "0.9 0.9 0.9 1",
+    "monitor": "0.1 0.1 0.1 1",
+    "cabinet": "0.45 0.35 0.25 1",
+    "sofa": "0.4 0.35 0.3 1",
+}
+
+_FALLBACK_DIMS = (0.4, 0.4, 0.8)
+_FALLBACK_COLOR = "0.5 0.5 0.5 1"
 
 
 def _add_existing_equipment(
     worldbody: ET.Element,
     space: SpaceModel,
 ) -> None:
-    """Add existing equipment as static bodies.
+    """Add existing equipment with real dimensions, orientation, and color.
 
     Args:
         worldbody: Worldbody XML element.
         space: Room model with existing equipment.
     """
     for eq in space.existing_equipment:
+        dims = _resolve_dims(eq)
+        color = _resolve_color(eq)
         pos = f"{eq.position[0]:.3f} {eq.position[1]:.3f} {eq.position[2]:.3f}"
+        euler = f"0 0 {math.radians(eq.orientation_deg):.4f}"
+
         body = ET.SubElement(
             worldbody,
             "body",
-            {
-                "name": eq.name,
-                "pos": pos,
-            },
+            {"name": eq.name, "pos": pos, "euler": euler},
         )
+
+        builder = _COMPOSITE_BUILDERS.get(eq.category)
+        if builder:
+            builder(body, eq.name, dims, color)
+        else:
+            _add_simple_box(body, eq.name, dims, color, eq.shape)
+
+
+def _resolve_dims(
+    eq: "ExistingEquipment",
+) -> tuple[float, float, float]:
+    """Resolve equipment dimensions, using category fallback if needed.
+
+    Args:
+        eq: Existing equipment entry.
+
+    Returns:
+        (width, depth, height) in meters.
+    """
+    if eq.dimensions != (0.4, 0.4, 0.8):
+        return eq.dimensions
+    return _DEFAULT_DIMENSIONS.get(eq.category, _FALLBACK_DIMS)
+
+
+def _resolve_color(
+    eq: "ExistingEquipment",
+) -> str:
+    """Resolve equipment color, using category fallback if needed.
+
+    Args:
+        eq: Existing equipment entry.
+
+    Returns:
+        RGBA string for MuJoCo.
+    """
+    if eq.rgba != (0.5, 0.5, 0.5, 1.0):
+        r, g, b, a = eq.rgba
+        return f"{r:.2f} {g:.2f} {b:.2f} {a:.2f}"
+    return _DEFAULT_COLORS.get(eq.category, _FALLBACK_COLOR)
+
+
+def _compute_mounting_z(
+    eq: "ExistingEquipment",
+    dims: tuple[float, float, float],
+    ceiling_m: float,
+) -> float:
+    """Compute Z position based on mounting type.
+
+    Args:
+        eq: Existing equipment entry.
+        dims: (width, depth, height) of the equipment.
+        ceiling_m: Room ceiling height.
+
+    Returns:
+        Z coordinate for the body center.
+    """
+    height = dims[2]
+    if eq.mounting == "floor":
+        return height / 2
+    if eq.mounting == "ceiling":
+        return ceiling_m - height / 2
+    # wall — use specified Z
+    return eq.position[2]
+
+
+def _add_simple_box(
+    body: ET.Element,
+    name: str,
+    dims: tuple[float, float, float],
+    color: str,
+    shape: str = "box",
+) -> None:
+    """Add a single box or cylinder geom.
+
+    Args:
+        body: Parent body element.
+        name: Equipment name for geom naming.
+        dims: (width, depth, height).
+        color: RGBA string.
+        shape: "box" or "cylinder".
+    """
+    if shape == "cylinder":
+        radius = max(dims[0], dims[1]) / 2
         ET.SubElement(
             body,
             "geom",
             {
-                "name": f"{eq.name}_geom",
-                "type": "box",
-                "size": "0.2 0.2 0.4",
-                "rgba": "0.6 0.4 0.2 1",
+                "name": f"{name}_geom",
+                "type": "cylinder",
+                "size": f"{radius:.3f} {dims[2] / 2:.3f}",
+                "rgba": color,
+                "contype": "1",
+                "conaffinity": "1",
             },
         )
+    else:
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "name": f"{name}_geom",
+                "type": "box",
+                "size": f"{dims[0] / 2:.3f} {dims[1] / 2:.3f} {dims[2] / 2:.3f}",
+                "rgba": color,
+                "contype": "1",
+                "conaffinity": "1",
+            },
+        )
+
+
+def _build_table(
+    body: ET.Element,
+    name: str,
+    dims: tuple[float, float, float],
+    color: str,
+) -> None:
+    """Build a table: top slab + 4 legs.
+
+    Args:
+        body: Parent body element.
+        name: Equipment name.
+        dims: (width, depth, height).
+        color: RGBA string for tabletop.
+    """
+    w, d, h = dims
+    top_thick = 0.03
+    leg_r = 0.025
+
+    # Tabletop
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_top",
+            "type": "box",
+            "size": f"{w / 2:.3f} {d / 2:.3f} {top_thick / 2:.3f}",
+            "pos": f"0 0 {h - top_thick / 2:.3f}",
+            "rgba": color,
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
+    # Legs
+    leg_h = h - top_thick
+    offsets = [
+        (w / 2 - leg_r, d / 2 - leg_r),
+        (-(w / 2 - leg_r), d / 2 - leg_r),
+        (w / 2 - leg_r, -(d / 2 - leg_r)),
+        (-(w / 2 - leg_r), -(d / 2 - leg_r)),
+    ]
+    for i, (ox, oy) in enumerate(offsets):
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "name": f"{name}_leg{i}",
+                "type": "box",
+                "size": f"{leg_r:.3f} {leg_r:.3f} {leg_h / 2:.3f}",
+                "pos": f"{ox:.3f} {oy:.3f} {leg_h / 2:.3f}",
+                "rgba": "0.7 0.7 0.72 1",
+                "contype": "1",
+                "conaffinity": "1",
+            },
+        )
+
+
+def _build_bed(
+    body: ET.Element,
+    name: str,
+    dims: tuple[float, float, float],
+    color: str,
+) -> None:
+    """Build a bed: frame + mattress + headboard.
+
+    Args:
+        body: Parent body element.
+        name: Equipment name.
+        dims: (width, depth, height).
+        color: RGBA string for mattress.
+    """
+    w, d, h = dims
+    mattress_h = 0.15
+    frame_h = h - mattress_h
+    headboard_h = 0.3
+
+    # Frame
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_frame",
+            "type": "box",
+            "size": f"{w / 2:.3f} {d / 2:.3f} {frame_h / 2:.3f}",
+            "pos": f"0 0 {frame_h / 2:.3f}",
+            "rgba": "0.3 0.22 0.14 1",
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
+    # Mattress
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_mattress",
+            "type": "box",
+            "size": f"{w / 2:.3f} {d / 2:.3f} {mattress_h / 2:.3f}",
+            "pos": f"0 0 {frame_h + mattress_h / 2:.3f}",
+            "rgba": color,
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
+    # Headboard
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_headboard",
+            "type": "box",
+            "size": f"{w / 2:.3f} 0.03 {headboard_h / 2:.3f}",
+            "pos": f"0 {-(d / 2 - 0.03):.3f} {h + headboard_h / 2:.3f}",
+            "rgba": "0.15 0.12 0.1 1",
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
+
+
+def _build_chair(
+    body: ET.Element,
+    name: str,
+    dims: tuple[float, float, float],
+    color: str,
+) -> None:
+    """Build a chair: base cylinder + seat + backrest.
+
+    Args:
+        body: Parent body element.
+        name: Equipment name.
+        dims: (width, depth, height).
+        color: RGBA string.
+    """
+    w, d, _h = dims
+    seat_h = 0.45
+    backrest_h = 0.3
+
+    # Base
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_base",
+            "type": "cylinder",
+            "size": f"{max(w, d) / 2 * 0.7:.3f} {seat_h / 2:.3f}",
+            "pos": f"0 0 {seat_h / 2:.3f}",
+            "rgba": "0.7 0.7 0.72 1",
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
+    # Seat
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_seat",
+            "type": "box",
+            "size": f"{w / 2:.3f} {d / 2:.3f} 0.03",
+            "pos": f"0 0 {seat_h:.3f}",
+            "rgba": color,
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
+    # Backrest
+    ET.SubElement(
+        body,
+        "geom",
+        {
+            "name": f"{name}_back",
+            "type": "box",
+            "size": f"{w / 2:.3f} 0.03 {backrest_h / 2:.3f}",
+            "pos": f"0 {-(d / 2 - 0.03):.3f} {seat_h + backrest_h / 2:.3f}",
+            "rgba": color,
+            "contype": "1",
+            "conaffinity": "1",
+        },
+    )
+
+
+_COMPOSITE_BUILDERS = {
+    "table": _build_table,
+    "desk": _build_table,
+    "bed": _build_bed,
+    "chair": _build_chair,
+}
 
 
 def _add_new_equipment(

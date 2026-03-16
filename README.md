@@ -14,7 +14,7 @@ Room photos + scenario text
 
 ## Features
 
-- **Space capture** — Upload 10–30 photos; DISCOVERSE reconstructs the room to MuJoCo (MJCF). Claude Vision extracts zones, equipment, doors, windows.
+- **Space capture** — Upload 10–30 photos; pycolmap reconstructs the room to a 3D point cloud and mesh. Claude Vision extracts zones, equipment, doors, windows.
 - **AI recommendation** — Describe your automation scenario in text; Claude returns a robotization plan (equipment from a strict catalog, workflow steps, targets).
 - **Scene assembly** — Auto-download MJCF/URDF from MuJoCo Menagerie / catalog; assemble room + robots + work objects into one MuJoCo scene.
 - **Simulation** — Scripted IK for manipulators, conveyor belt physics, camera inspection. Metrics: cycle time, success rate, collisions.
@@ -27,7 +27,7 @@ Room photos + scenario text
 |----------------|-------------------------------------|
 | Simulator      | MuJoCo (CPU-only, 4000× realtime)   |
 | Robot models   | MuJoCo Menagerie + robot_descriptions |
-| 3D reconstruction | DISCOVERSE (photos → MuJoCo)      |
+| 3D reconstruction | pycolmap + trimesh (photos → mesh → MJCF) |
 | AI planning    | Claude API (Vision + text)          |
 | Backend        | FastAPI, Pydantic                    |
 | Frontend       | React, TypeScript, Three.js          |

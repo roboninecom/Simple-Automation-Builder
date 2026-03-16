@@ -11,7 +11,9 @@ from backend.app.models.space import SpaceModel
 from backend.app.services.catalog import load_equipment_catalog
 from backend.app.services.downloader import download_equipment_models
 from backend.app.services.project_status import advance_phase, get_project_dir
-from backend.app.services.scene import generate_mjcf_scene, validate_mjcf
+from backend.app.services.scene import generate_mjcf_scene, generate_preview_scene, validate_mjcf
+from backend.app.services.scene_export import export_scene_data
+from backend.app.services.scene_validation import adjust_scene, validate_scene_layout
 from backend.app.services.simulator import run_simulation, run_visual_simulation
 
 __all__ = ["router"]
@@ -33,6 +35,149 @@ class BuildSceneResponse(BaseModel):
     valid: bool
     equipment_count: int
     work_object_count: int
+
+
+@router.post("/{project_id}/build-preview")
+async def build_preview(project_id: str) -> dict:
+    """Build preview scene from SpaceModel (room + furniture, no recommendation).
+
+    Args:
+        project_id: Project identifier.
+
+    Returns:
+        Preview scene metadata.
+    """
+    space = _load_space_model(project_id)
+    scenes_dir = get_project_dir(project_id) / "scenes"
+    preview_path = scenes_dir / "preview.xml"
+
+    generate_preview_scene(space, preview_path)
+    valid = validate_mjcf(preview_path)
+    warnings = validate_scene_layout(space, preview_path)
+
+    advance_phase(project_id, "scene-editor")
+
+    return {
+        "scene_path": str(preview_path),
+        "valid": valid,
+        "equipment_count": len(space.existing_equipment),
+        "warnings": [
+            {"body": w.body_name, "level": w.level, "message": w.message} for w in warnings
+        ],
+    }
+
+
+class AdjustRequest(BaseModel):
+    """Request body for scene adjustments.
+
+    Args:
+        adjustments: List of body adjustments.
+    """
+
+    adjustments: list[dict]
+
+
+@router.post("/{project_id}/adjust-preview")
+async def adjust_preview(project_id: str, request: AdjustRequest) -> dict:
+    """Apply adjustments to preview scene AND space_model.json.
+
+    Syncs position changes, deletions, and dimension changes back to
+    the SpaceModel so that downstream steps (build-scene, simulate)
+    use the corrected layout.
+
+    Args:
+        project_id: Project identifier.
+        request: List of adjustments to apply.
+
+    Returns:
+        Updated validation warnings.
+    """
+    space = _load_space_model(project_id)
+    project_dir = get_project_dir(project_id)
+    scenes_dir = project_dir / "scenes"
+    preview_path = scenes_dir / "preview.xml"
+
+    if not preview_path.exists():
+        raise HTTPException(404, "Preview scene not found. Build it first.")
+
+    adjust_scene(preview_path, request.adjustments, preview_path)
+
+    # Sync adjustments back to SpaceModel
+    space = _apply_adjustments_to_space(space, request.adjustments)
+    space_path = project_dir / "space_model.json"
+    space_path.write_text(space.model_dump_json(indent=2), encoding="utf-8")
+
+    warnings = validate_scene_layout(space, preview_path)
+
+    return {
+        "status": "adjusted",
+        "warnings": [
+            {"body": w.body_name, "level": w.level, "message": w.message} for w in warnings
+        ],
+    }
+
+
+def _apply_adjustments_to_space(
+    space: SpaceModel,
+    adjustments: list[dict],
+) -> SpaceModel:
+    """Apply adjustments to SpaceModel existing_equipment list.
+
+    Args:
+        space: Current space model.
+        adjustments: List of adjustment dicts.
+
+    Returns:
+        Updated SpaceModel with modified equipment.
+    """
+    equipment = list(space.existing_equipment)
+
+    for adj in adjustments:
+        name = adj.get("body_name", "")
+
+        if adj.get("remove"):
+            equipment = [eq for eq in equipment if eq.name != name]
+            continue
+
+        for i, eq in enumerate(equipment):
+            if eq.name != name:
+                continue
+
+            updates: dict = {}
+            if "position" in adj:
+                pos = adj["position"]
+                updates["position"] = (pos[0], pos[1], pos[2])
+            if "orientation_deg" in adj:
+                updates["orientation_deg"] = adj["orientation_deg"]
+            if "dimensions" in adj:
+                dims = adj["dimensions"]
+                updates["dimensions"] = (dims[0], dims[1], dims[2])
+
+            if updates:
+                equipment[i] = eq.model_copy(update=updates)
+            break
+
+    return space.model_copy(update={"existing_equipment": equipment})
+
+
+@router.get("/{project_id}/scene-data")
+async def get_scene_data(project_id: str) -> dict:
+    """Return scene data as JSON for Three.js editor.
+
+    Args:
+        project_id: Project identifier.
+
+    Returns:
+        Scene bodies, walls, floor, doors, windows for 3D rendering.
+    """
+    space = _load_space_model(project_id)
+    scenes_dir = get_project_dir(project_id) / "scenes"
+    preview_path = scenes_dir / "preview.xml"
+
+    if not preview_path.exists():
+        raise HTTPException(404, "Preview scene not found. Build it first.")
+
+    return export_scene_data(preview_path, space)
 
 
 @router.post("/{project_id}/build-scene", response_model=BuildSceneResponse)
