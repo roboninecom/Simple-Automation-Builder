@@ -417,10 +417,19 @@ function SelectedTransform({ body, mode, onMove, roomBounds }: {
   const obj = scene.getObjectByName(body.name);
   if (!obj) return null;
 
-  // Estimate half-size margin from first geom to keep object inside walls
-  const firstGeom = body.geoms[0];
-  const marginX = firstGeom ? (firstGeom.size[0] ?? 0.1) : 0.1;
-  const marginZ = firstGeom ? (firstGeom.size[1] ?? 0.1) : 0.1;
+  // Compute max half-extent across all geoms for accurate clamping
+  let marginX = 0.1;
+  let marginZ = 0.1;
+  for (const g of body.geoms) {
+    if (g.type === "cylinder") {
+      const r = g.size[0] ?? 0.1;
+      marginX = Math.max(marginX, r);
+      marginZ = Math.max(marginZ, r);
+    } else {
+      marginX = Math.max(marginX, (g.size[0] ?? 0.1) + Math.abs(g.pos[0] ?? 0));
+      marginZ = Math.max(marginZ, (g.size[1] ?? 0.1) + Math.abs(g.pos[1] ?? 0));
+    }
+  }
 
   return (
     <TransformControls
