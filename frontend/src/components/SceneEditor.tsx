@@ -417,16 +417,20 @@ function SelectedTransform({ body, mode, onMove, roomBounds }: {
   const obj = scene.getObjectByName(body.name);
   if (!obj) return null;
 
+  // Estimate half-size margin from first geom to keep object inside walls
+  const firstGeom = body.geoms[0];
+  const marginX = firstGeom ? (firstGeom.size[0] ?? 0.1) : 0.1;
+  const marginZ = firstGeom ? (firstGeom.size[1] ?? 0.1) : 0.1;
+
   return (
     <TransformControls
       object={obj}
       mode={mode}
       onObjectChange={() => {
         if (obj && mode === "translate") {
-          // Clamp object position to room bounds in real-time
-          obj.position.x = Math.max(0, Math.min(obj.position.x, roomBounds.width));
+          obj.position.x = Math.max(marginX, Math.min(obj.position.x, roomBounds.width - marginX));
           obj.position.y = Math.max(0.05, Math.min(obj.position.y, roomBounds.ceiling));
-          obj.position.z = Math.max(-roomBounds.length, Math.min(obj.position.z, 0));
+          obj.position.z = Math.max(-roomBounds.length + marginZ, Math.min(obj.position.z, -marginZ));
           onMove(body.name, obj.position.clone());
         }
       }}
