@@ -3,7 +3,7 @@
  * @module SceneEditor
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls, Html, Grid } from "@react-three/drei";
 import * as THREE from "three";
@@ -411,39 +411,43 @@ function SelectedTransform({ body, mode, onMove, roomBounds }: {
   roomBounds: { width: number; length: number; ceiling: number };
 }): React.JSX.Element | null {
   const { scene } = useThree();
+  const objRef = useRef<THREE.Object3D | null>(null);
 
-  if (!body) return null;
+  const obj = body ? scene.getObjectByName(body.name) ?? null : null;
+  useEffect(() => {
+    objRef.current = obj;
+  }, [obj]);
 
-  const obj = scene.getObjectByName(body.name);
+  const margins = useMemo(() => {
+    if (!body) return { x: 0.1, z: 0.1 };
+    let mx = 0.1;
+    let mz = 0.1;
+    for (const g of body.geoms) {
+      if (g.type === "cylinder") {
+        const r = g.size[0] ?? 0.1;
+        mx = Math.max(mx, r);
+        mz = Math.max(mz, r);
+      } else {
+        mx = Math.max(mx, (g.size[0] ?? 0.1) + Math.abs(g.pos[0] ?? 0));
+        mz = Math.max(mz, (g.size[1] ?? 0.1) + Math.abs(g.pos[1] ?? 0));
+      }
+    }
+    return { x: mx, z: mz };
+  }, [body]);
+
+  const handleChange = useCallback(() => {
+    const target = objRef.current;
+    if (!target || !body || mode !== "translate") return;
+    target.position.x = Math.max(margins.x, Math.min(target.position.x, roomBounds.width - margins.x));
+    target.position.y = Math.max(0.05, Math.min(target.position.y, roomBounds.ceiling));
+    target.position.z = Math.max(-roomBounds.length + margins.z, Math.min(target.position.z, -margins.z));
+    onMove(body.name, target.position.clone());
+  }, [body, mode, onMove, roomBounds, margins]);
+
   if (!obj) return null;
 
-  // Compute max half-extent across all geoms for accurate clamping
-  let marginX = 0.1;
-  let marginZ = 0.1;
-  for (const g of body.geoms) {
-    if (g.type === "cylinder") {
-      const r = g.size[0] ?? 0.1;
-      marginX = Math.max(marginX, r);
-      marginZ = Math.max(marginZ, r);
-    } else {
-      marginX = Math.max(marginX, (g.size[0] ?? 0.1) + Math.abs(g.pos[0] ?? 0));
-      marginZ = Math.max(marginZ, (g.size[1] ?? 0.1) + Math.abs(g.pos[1] ?? 0));
-    }
-  }
-
   return (
-    <TransformControls
-      object={obj}
-      mode={mode}
-      onObjectChange={() => {
-        if (obj && mode === "translate") {
-          obj.position.x = Math.max(marginX, Math.min(obj.position.x, roomBounds.width - marginX));
-          obj.position.y = Math.max(0.05, Math.min(obj.position.y, roomBounds.ceiling));
-          obj.position.z = Math.max(-roomBounds.length + marginZ, Math.min(obj.position.z, -marginZ));
-          onMove(body.name, obj.position.clone());
-        }
-      }}
-    />
+    <TransformControls object={obj} mode={mode} onObjectChange={handleChange} />
   );
 }
 
