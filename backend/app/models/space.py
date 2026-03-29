@@ -145,12 +145,16 @@ class SceneReconstruction(BaseModel):
         mjcf_path: Path to the MJCF scene file (base for adding equipment).
         pointcloud_path: Path to the point cloud file.
         dimensions: Room dimensions from the calibrated mesh.
+        metadata_path: Path to reconstruction metadata JSON (camera poses, intrinsics).
+        sparse_dir: Path to sparse reconstruction directory (for pycolmap reload).
     """
 
     mesh_path: Path
     mjcf_path: Path
     pointcloud_path: Path
     dimensions: Dimensions
+    metadata_path: Path | None = None
+    sparse_dir: Path | None = None
 
 
 class SceneAnalysis(BaseModel):
