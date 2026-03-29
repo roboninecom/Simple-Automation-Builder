@@ -153,6 +153,8 @@ def calibrate_scale(
         mjcf_path=reconstruction.mjcf_path,
         pointcloud_path=reconstruction.pointcloud_path,
         dimensions=scaled_dims,
+        metadata_path=reconstruction.metadata_path,
+        sparse_dir=reconstruction.sparse_dir,
     )
 
 
@@ -191,6 +193,8 @@ def calibrate_scale_from_dimensions(
         mjcf_path=reconstruction.mjcf_path,
         pointcloud_path=reconstruction.pointcloud_path,
         dimensions=target_dims,
+        metadata_path=reconstruction.metadata_path,
+        sparse_dir=reconstruction.sparse_dir,
     )
 
 
