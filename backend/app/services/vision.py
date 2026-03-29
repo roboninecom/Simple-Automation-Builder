@@ -104,7 +104,10 @@ async def analyze_scene(
                 model=get_settings().vision_model,
             )
             analysis = _parse_analysis_response(response)
-            return validate_analysis(analysis, dims)
+            validated = validate_analysis(analysis, dims)
+            return validate_positions_against_cloud(
+                validated, reconstruction.pointcloud_path, dims
+            )
         except (ValueError, json.JSONDecodeError) as exc:
             last_error = exc
             logger.warning(
