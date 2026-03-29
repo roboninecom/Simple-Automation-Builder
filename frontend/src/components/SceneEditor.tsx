@@ -19,6 +19,8 @@ import { PointCloudModal } from "@/components/PointCloudModal";
 interface SceneEditorProps {
   /** Project identifier. */
   projectId: string;
+  /** Whether a preview scene already exists (phase >= scene-editor). */
+  hasExistingScene: boolean;
   /** Called when user confirms the preview. */
   onConfirm: () => void;
   /** Called when user wants to go back. */
@@ -60,7 +62,7 @@ function rgbaToHex(rgba: number[]): string {
  * @param props - Editor props.
  * @returns Scene editor element.
  */
-export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps): React.JSX.Element {
+export function SceneEditor({ projectId, hasExistingScene, onConfirm, onBack }: SceneEditorProps): React.JSX.Element {
   const [sceneData, setSceneData] = useState<SceneData | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<"translate" | "rotate">("translate");
@@ -96,9 +98,11 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
   }, [projectId, roomWidth, roomLength, roomCeiling]);
 
   useEffect(() => {
+    if (!hasExistingScene) return;
+
     const controller = new AbortController();
 
-    async function checkScene(): Promise<void> {
+    async function loadScene(): Promise<void> {
       try {
         const resp = await fetch(`/api/projects/${projectId}/scene-data`, {
           signal: controller.signal,
@@ -110,18 +114,15 @@ export function SceneEditor({ projectId, onConfirm, onBack }: SceneEditorProps):
           setSceneData(data);
           setCalibrated(true);
           setDirty(new Map());
-        } else {
-          setCalibrated(false);
         }
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
-        setCalibrated(false);
       }
     }
 
-    checkScene();
+    loadScene();
     return () => controller.abort();
-  }, [projectId]);
+  }, [projectId, hasExistingScene]);
 
   const handleBodyMove = useCallback((name: string, worldPos: THREE.Vector3) => {
     if (!sceneData) return;

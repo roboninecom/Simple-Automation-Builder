@@ -87,13 +87,22 @@ class TestFullPipeline:
         assert data["dimensions"]["width_m"] > 0
 
     def test_02_reconstruction_artifacts(self) -> None:
-        """QA-1: Reconstruction produces pointcloud and status."""
+        """QA-1: Reconstruction produces pointcloud, metadata, and status."""
         pdir = _project_dir(self.project_id)
         assert (pdir / "reconstruction" / "pointcloud.ply").exists()
         assert (pdir / "status.json").exists()
 
         status = json.loads((pdir / "status.json").read_text())
         assert status["current_phase"] == "upload"
+
+        # Spatial grounding: reconstruction metadata should be generated
+        meta_path = pdir / "reconstruction" / "reconstruction_meta.json"
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text())
+            assert "cameras" in meta
+            assert "images" in meta
+            assert "registered_images" in meta
+            assert meta["num_registered_images"] > 0
 
     def test_03_calibrate(self) -> None:
         """QA-2: Calibrate scale and run vision analysis."""

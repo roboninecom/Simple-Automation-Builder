@@ -49,6 +49,29 @@ Use room dimensions as reference scale. Typical furniture sizes:
 - Sofa: 1.5–2.5m wide, 0.8–1.0m deep, 0.7–0.9m high
 - Plant (potted, floor): 0.3–0.5m wide, 0.3–0.5m deep, 0.5–1.5m high
 
+## Spatial Anchor Points
+
+When provided, each photo includes a table of spatial anchor points mapping pixel locations to real-world 3D coordinates (meters). These are computed from the actual 3D reconstruction and are metrically accurate.
+
+**How to use anchors for positioning**:
+1. Identify which photo shows an object most clearly
+2. Estimate which pixel region the object's base center occupies
+3. Find the 2–4 nearest spatial anchors surrounding that pixel region
+4. Interpolate the world coordinates from those anchors
+5. Use the interpolated result as the object's position
+
+**Example**: A desk's base center appears near pixel (500, 420). Nearby anchors:
+- pixel (450, 400) → world (2.10, 1.30, 0.00)
+- pixel (550, 440) → world (2.50, 1.50, 0.00)
+
+Interpolated position: approximately (2.30, 1.40, 0.00).
+
+**Rules**:
+- ALWAYS prefer anchor-derived positions over pure visual estimation
+- If no anchors are near an object, fall back to room-dimension-based estimation
+- Floor-level anchors (z ≈ 0) are most reliable for XY positioning
+- Wall anchors help confirm wall-relative placement of doors and windows
+
 ## Output Format
 
 Return ONLY valid JSON (no markdown, no explanation) matching this schema:
@@ -122,3 +145,5 @@ Return ONLY valid JSON (no markdown, no explanation) matching this schema:
 - Be conservative — only include items you can clearly identify
 - For floor-mounted equipment, set position Z = 0
 - For wall-mounted equipment, set position Z to the center height of the item
+- When spatial anchors are provided, use them as the primary position reference
+- If anchors are available, briefly note which photo informed each equipment position in the name suffix (e.g. "desk_1" from the photo where it is most visible)

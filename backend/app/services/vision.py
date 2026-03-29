@@ -1,5 +1,7 @@
 """Claude Vision scene analysis — photos → structured SceneAnalysis."""
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
@@ -14,12 +16,59 @@ from backend.app.models.space import (
     SceneReconstruction,
     SpaceModel,
 )
+from backend.app.services.spatial_anchors import ImageAnchors
 
-__all__ = ["analyze_scene", "build_space_model", "validate_analysis"]
+__all__ = [
+    "analyze_scene",
+    "build_space_model",
+    "validate_analysis",
+    "validate_positions_against_cloud",
+]
 
 logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 2
+
+
+def _try_compute_anchors(
+    reconstruction: SceneReconstruction,
+) -> list[ImageAnchors] | None:
+    """Attempt to compute spatial anchors from reconstruction data.
+
+    Returns None if metadata or sparse dir is unavailable (backward compat).
+
+    Args:
+        reconstruction: Scene reconstruction result.
+
+    Returns:
+        List of ImageAnchors or None if data is unavailable.
+    """
+    if reconstruction.sparse_dir is None or not reconstruction.sparse_dir.exists():
+        logger.info("No sparse dir — skipping spatial anchors")
+        return None
+
+    try:
+        import pycolmap
+
+        from backend.app.services.spatial_anchors import compute_all_anchors
+
+        recon = pycolmap.Reconstruction()
+        sparse_subdirs = sorted(reconstruction.sparse_dir.iterdir())
+        if not sparse_subdirs:
+            logger.warning("Sparse dir empty — skipping spatial anchors")
+            return None
+        recon.read(str(sparse_subdirs[0]))
+
+        anchors = compute_all_anchors(recon, reconstruction.dimensions)
+        logger.info(
+            "Computed spatial anchors for %d images (%d total anchors)",
+            len(anchors),
+            sum(len(ia.anchors) for ia in anchors),
+        )
+        return anchors if anchors else None
+    except Exception:
+        logger.warning("Failed to compute spatial anchors", exc_info=True)
+        return None
 
 
 async def analyze_scene(
@@ -42,7 +91,8 @@ async def analyze_scene(
     """
     system_prompt = load_prompt("vision_analysis")
     dims = reconstruction.dimensions
-    text = _format_analysis_request(dims)
+    image_anchors = _try_compute_anchors(reconstruction)
+    text = _format_analysis_request(dims, image_anchors)
 
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
@@ -54,7 +104,10 @@ async def analyze_scene(
                 model=get_settings().vision_model,
             )
             analysis = _parse_analysis_response(response)
-            return validate_analysis(analysis, dims)
+            validated = validate_analysis(analysis, dims)
+            return validate_positions_against_cloud(
+                validated, reconstruction.pointcloud_path, dims
+            )
         except (ValueError, json.JSONDecodeError) as exc:
             last_error = exc
             logger.warning(
@@ -175,16 +228,102 @@ def _clamp(value: float, min_val: float, max_val: float) -> float:
     return max(min_val, min(value, max_val))
 
 
-def _format_analysis_request(dims: Dimensions) -> str:
+def validate_positions_against_cloud(
+    analysis: SceneAnalysis,
+    pointcloud_path: Path | None,
+    dims: Dimensions,
+    near_radius: float = 0.5,
+    far_radius: float = 1.0,
+    near_penalty: float = 0.2,
+    far_penalty: float = 0.4,
+) -> SceneAnalysis:
+    """Cross-check equipment positions against point cloud density.
+
+    For each floor-mounted equipment item, queries nearby points in the
+    cloud. If no points exist near the claimed position, confidence is
+    reduced — indicating the position may be incorrect.
+
+    Args:
+        analysis: Parsed scene analysis.
+        pointcloud_path: Path to PLY point cloud file (None to skip).
+        dims: Room dimensions.
+        near_radius: Radius for "close" point search in meters.
+        far_radius: Radius for "far" point search in meters.
+        near_penalty: Confidence penalty when no close points found.
+        far_penalty: Confidence penalty when no far points found either.
+
+    Returns:
+        SceneAnalysis with adjusted confidence scores.
+    """
+    if pointcloud_path is None or not pointcloud_path.exists():
+        return analysis
+    if pointcloud_path.stat().st_size == 0:
+        return analysis
+
+    try:
+        import trimesh
+        from scipy.spatial import KDTree
+
+        cloud = trimesh.load(str(pointcloud_path))
+        if not hasattr(cloud, "vertices") or len(cloud.vertices) < 3:
+            return analysis
+
+        tree = KDTree(cloud.vertices)
+    except Exception:
+        logger.warning("Failed to load point cloud for validation", exc_info=True)
+        return analysis
+
+    updated_equipment = []
+    for eq in analysis.existing_equipment:
+        if eq.mounting != "floor":
+            updated_equipment.append(eq)
+            continue
+
+        pos = eq.position
+        query_point = [pos[0], pos[1], 0.0]
+
+        near_count = tree.query_ball_point(query_point, near_radius, return_length=True)
+        if near_count >= 3:
+            updated_equipment.append(eq)
+            continue
+
+        far_count = tree.query_ball_point(query_point, far_radius, return_length=True)
+        if far_count == 0:
+            new_conf = max(0.0, eq.confidence - far_penalty)
+            logger.warning(
+                "Equipment '%s' at (%.2f, %.2f): no points within %.1fm — "
+                "confidence %.2f → %.2f",
+                eq.name, pos[0], pos[1], far_radius,
+                eq.confidence, new_conf,
+            )
+            updated_equipment.append(eq.model_copy(update={"confidence": new_conf}))
+        else:
+            new_conf = max(0.0, eq.confidence - near_penalty)
+            logger.info(
+                "Equipment '%s' at (%.2f, %.2f): few points within %.1fm — "
+                "confidence %.2f → %.2f",
+                eq.name, pos[0], pos[1], near_radius,
+                eq.confidence, new_conf,
+            )
+            updated_equipment.append(eq.model_copy(update={"confidence": new_conf}))
+
+    return analysis.model_copy(update={"existing_equipment": updated_equipment})
+
+
+def _format_analysis_request(
+    dims: Dimensions,
+    image_anchors: list[ImageAnchors] | None = None,
+) -> str:
     """Format the text portion of the vision analysis request.
 
     Args:
         dims: Room dimensions from reconstruction.
+        image_anchors: Optional spatial anchors per image for precise positioning.
 
     Returns:
         Formatted request text.
     """
-    return (
+    text = (
         f"Room dimensions from 3D reconstruction:\n"
         f"  Width (X-axis): {dims.width_m:.2f}m\n"
         f"  Length (Y-axis): {dims.length_m:.2f}m\n"
@@ -195,14 +334,56 @@ def _format_analysis_request(dims: Dimensions) -> str:
         f"  South wall: Y = 0\n"
         f"  East wall: X = {dims.width_m:.2f}\n"
         f"  West wall: X = 0\n\n"
-        f"Analyze these photos and return a JSON with:\n"
-        f"1. Functional zones (name, polygon, area)\n"
-        f"2. Existing equipment with estimated dimensions [w, d, h], "
-        f"orientation_deg, rgba color, mounting type, shape\n"
-        f"3. Doors with wall assignment and height\n"
-        f"4. Windows with wall assignment, height, and sill_height_m\n\n"
-        f"Return ONLY valid JSON matching the schema in the system prompt."
     )
+
+    if image_anchors:
+        text += _format_anchor_section(image_anchors)
+
+    text += (
+        "Analyze these photos and return a JSON with:\n"
+        "1. Functional zones (name, polygon, area)\n"
+        "2. Existing equipment with estimated dimensions [w, d, h], "
+        "orientation_deg, rgba color, mounting type, shape\n"
+        "3. Doors with wall assignment and height\n"
+        "4. Windows with wall assignment, height, and sill_height_m\n\n"
+        "Return ONLY valid JSON matching the schema in the system prompt."
+    )
+    return text
+
+
+def _format_anchor_section(image_anchors: list[ImageAnchors]) -> str:
+    """Format spatial anchor data as text for the vision request.
+
+    Args:
+        image_anchors: Anchor data per image.
+
+    Returns:
+        Formatted markdown section describing anchors.
+    """
+    lines = [
+        "## Spatial Reference Points\n",
+        "Each photo below has spatial anchor points that map pixel locations "
+        "to real-world 3D coordinates (meters). Use these to determine "
+        "precise positions of detected equipment.\n",
+    ]
+
+    for ia in image_anchors:
+        lines.append(f"### {ia.image_name}")
+        cx, cy, cz = ia.camera_position
+        dx, dy, dz = ia.viewing_direction
+        lines.append(
+            f"Camera at ({cx:.2f}, {cy:.2f}, {cz:.2f}), "
+            f"looking toward ({dx:.2f}, {dy:.2f}, {dz:.2f})"
+        )
+        lines.append("| Pixel (x,y) | World (x,y,z) | Label |")
+        lines.append("|-------------|---------------|-------|")
+        for a in ia.anchors:
+            px, py = a.pixel
+            wx, wy, wz = a.world
+            lines.append(f"| ({px}, {py}) | ({wx:.2f}, {wy:.2f}, {wz:.2f}) | {a.label} |")
+        lines.append("")
+
+    return "\n".join(lines) + "\n"
 
 
 def _parse_analysis_response(response: str) -> SceneAnalysis:

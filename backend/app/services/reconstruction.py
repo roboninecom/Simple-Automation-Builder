@@ -7,6 +7,7 @@ Uses pycolmap Python API — no CLI dependency.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -29,6 +30,7 @@ __all__ = [
     "calibrate_scale_from_dimensions",
     "rescale_pointcloud",
     "check_reconstruction_deps",
+    "export_reconstruction_metadata",
     "transform_colmap_to_threejs",
 ]
 
@@ -73,7 +75,14 @@ async def reconstruct_scene(
     sparse_dir = output_dir / "sparse"
     mesh_path = output_dir / "mesh.obj"
     pointcloud_path = output_dir / "pointcloud.ply"
+    metadata_path = output_dir / "reconstruction_meta.json"
     mjcf_path = output_dir / "scene.xml"
+
+    photo_names = [
+        f.name
+        for f in sorted(photos_dir.iterdir())
+        if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tiff"}
+    ]
 
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(
@@ -84,6 +93,8 @@ async def reconstruct_scene(
         sparse_dir,
         pointcloud_path,
         mesh_path,
+        metadata_path,
+        photo_names,
     )
 
     _generate_base_mjcf(mesh_path, mjcf_path)
@@ -94,6 +105,8 @@ async def reconstruct_scene(
         mjcf_path=mjcf_path,
         pointcloud_path=pointcloud_path,
         dimensions=dimensions,
+        metadata_path=metadata_path if metadata_path.exists() else None,
+        sparse_dir=sparse_dir,
     )
 
 
@@ -140,6 +153,8 @@ def calibrate_scale(
         mjcf_path=reconstruction.mjcf_path,
         pointcloud_path=reconstruction.pointcloud_path,
         dimensions=scaled_dims,
+        metadata_path=reconstruction.metadata_path,
+        sparse_dir=reconstruction.sparse_dir,
     )
 
 
@@ -178,6 +193,8 @@ def calibrate_scale_from_dimensions(
         mjcf_path=reconstruction.mjcf_path,
         pointcloud_path=reconstruction.pointcloud_path,
         dimensions=target_dims,
+        metadata_path=reconstruction.metadata_path,
+        sparse_dir=reconstruction.sparse_dir,
     )
 
 
@@ -207,6 +224,8 @@ def _run_pycolmap_pipeline(
     sparse_dir: Path,
     pointcloud_path: Path,
     mesh_path: Path,
+    metadata_path: Path | None = None,
+    photo_names: list[str] | None = None,
 ) -> None:
     """Execute full pycolmap reconstruction pipeline (blocking).
 
@@ -216,6 +235,8 @@ def _run_pycolmap_pipeline(
         sparse_dir: Sparse reconstruction output directory.
         pointcloud_path: Output fused point cloud.
         mesh_path: Output mesh file.
+        metadata_path: Output JSON for camera poses and intrinsics.
+        photo_names: List of all input photo filenames for registration tracking.
     """
     import pycolmap
 
@@ -260,6 +281,8 @@ def _run_pycolmap_pipeline(
 
     _export_pointcloud(best, pointcloud_path)
     _pointcloud_to_mesh(pointcloud_path, mesh_path)
+    if metadata_path is not None:
+        export_reconstruction_metadata(best, metadata_path, photo_names)
 
 
 def transform_colmap_to_threejs(points: np.ndarray) -> np.ndarray:
@@ -326,6 +349,100 @@ def _collect_points(
     if not points:
         raise RuntimeError("No 3D points in reconstruction")
     return points, colors
+
+
+def export_reconstruction_metadata(
+    reconstruction: pycolmap.Reconstruction,
+    output_path: Path,
+    photo_names: list[str] | None = None,
+) -> dict:
+    """Export camera poses, intrinsics, and image registration from reconstruction.
+
+    Args:
+        reconstruction: pycolmap Reconstruction object.
+        output_path: Output JSON file path.
+        photo_names: All input photo filenames (for tracking unregistered images).
+
+    Returns:
+        The metadata dict that was written to disk.
+    """
+    cameras: dict[str, dict] = {}
+    for cam_id, camera in reconstruction.cameras.items():
+        cameras[str(cam_id)] = {
+            "model": str(camera.model),
+            "width": camera.width,
+            "height": camera.height,
+            "focal_length_x": float(camera.focal_length_x),
+            "focal_length_y": float(camera.focal_length_y),
+            "principal_point_x": float(camera.principal_point_x),
+            "principal_point_y": float(camera.principal_point_y),
+        }
+
+    images: dict[str, dict] = {}
+    registered_names: set[str] = set()
+    for img_id, image in reconstruction.images.items():
+        if not image.has_pose:
+            continue
+        name = image.name
+        registered_names.add(name)
+
+        cfw = image.cam_from_world()
+        matrix_3x4 = cfw.matrix().tolist()
+
+        center_colmap = image.projection_center()
+        direction_colmap = image.viewing_direction()
+        center = _transform_point_colmap_to_threejs(center_colmap)
+        direction = _transform_point_colmap_to_threejs(direction_colmap)
+
+        images[str(img_id)] = {
+            "name": name,
+            "camera_id": image.camera_id,
+            "cam_from_world": matrix_3x4,
+            "projection_center": center.tolist(),
+            "viewing_direction": direction.tolist(),
+        }
+
+    registered_mapping = {img["name"]: img_id for img_id, img in images.items()}
+    unregistered = []
+    if photo_names is not None:
+        unregistered = [n for n in photo_names if n not in registered_names]
+        if unregistered:
+            logger.warning(
+                "%d of %d photos not registered by SfM: %s",
+                len(unregistered),
+                len(photo_names),
+                unregistered,
+            )
+
+    metadata = {
+        "cameras": cameras,
+        "images": images,
+        "registered_images": registered_mapping,
+        "unregistered_images": unregistered,
+        "num_points3D": reconstruction.num_points3D(),
+        "num_registered_images": reconstruction.num_reg_images(),
+    }
+
+    output_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    logger.info(
+        "Exported reconstruction metadata: %d cameras, %d images to %s",
+        len(cameras),
+        len(images),
+        output_path,
+    )
+    return metadata
+
+
+def _transform_point_colmap_to_threejs(point: np.ndarray) -> np.ndarray:
+    """Transform a single 3D point from COLMAP to Three.js convention.
+
+    Args:
+        point: 3-element array in COLMAP coordinates.
+
+    Returns:
+        3-element array in Three.js coordinates (Y-up, Z-back).
+    """
+    return np.array([point[0], -point[1], -point[2]])
 
 
 def _pointcloud_to_mesh(

@@ -89,6 +89,7 @@ export function ProjectWorkflow(): React.JSX.Element {
       <StepContent
         currentStep={currentStep}
         projectId={projectId}
+        currentPhase={status?.current_phase ?? "upload"}
         simResult={simResult}
         iterationHistory={iterationHistory}
         nav={nav}
@@ -136,12 +137,14 @@ function useStepGuard(
 function StepContent({
   currentStep,
   projectId,
+  currentPhase,
   simResult,
   iterationHistory,
   nav,
 }: {
   currentStep: Step;
   projectId: string | undefined;
+  currentPhase: PipelinePhase;
   simResult: import("@/types").SimResult | null;
   iterationHistory: import("@/types").IterationLog[];
   nav: ReturnType<typeof useStepNavigation>;
@@ -153,6 +156,7 @@ function StepContent({
     return (
       <SceneEditor
         projectId={projectId}
+        hasExistingScene={phaseReached(currentPhase, "scene-editor")}
         onConfirm={nav.onSceneEditorComplete}
         onBack={nav.onBack}
       />
