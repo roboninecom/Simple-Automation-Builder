@@ -30,76 +30,56 @@ Proposed:
   Photos + Dimensions + Spatial Anchors (per-image) ──→ Claude Vision ──→ SceneAnalysis (grounded positions)
 ```
 
-### What are "Spatial Anchors"?
+---
 
-For each registered photo, we compute a set of reference points projected from the 3D reconstruction:
+## Feature Breakdown
 
-```
-Photo "IMG_001.jpg":
-  Spatial anchors (pixel → world coordinate):
-    - pixel (320, 480) → world (0.00, 0.00, 0.00)  [floor corner, origin]
-    - pixel (640, 240) → world (5.80, 0.00, 2.70)  [wall-ceiling edge]
-    - pixel (450, 400) → world (2.10, 1.30, 0.00)  [floor point near desk]
-    - pixel (100, 350) → world (0.00, 3.20, 0.90)  [west wall at 0.9m height]
-    ...
-  Bounding box coverage: floor (0,0)-(5.8, 4.2), ceiling at 2.7m
-  Camera position: (2.9, 2.1, 1.6), looking toward north wall
-```
-
-This gives Claude a coordinate grid overlaid on each photo — it can now say "the desk is near pixel (450, 400) which maps to world (2.1, 1.3, 0.0)" instead of guessing.
+Each feature is a self-contained unit with its own tests, validation, and commit.
 
 ---
 
-## Phased Implementation Plan
+### Feature 1: Export Reconstruction Metadata
 
-### Phase 1: Export Reconstruction Metadata
+**Commit**: `feat(reconstruction): export camera poses and intrinsics from pycolmap`
 
-**Goal**: Save camera poses, intrinsics, and point-image associations from pycolmap reconstruction.
+> Save camera poses, intrinsics, and reconstruction statistics as JSON
+> after SfM completes. This data is currently discarded but is required
+> for projecting 3D points into image pixel coordinates.
 
-**Changes to `reconstruction.py`**:
+**Goal**: After `reconstruct_scene()`, produce `reconstruction_meta.json` with camera data.
 
-```python
-def _export_reconstruction_metadata(
-    reconstruction: pycolmap.Reconstruction,
-    output_path: Path,
-) -> None:
-    """Export camera poses, intrinsics, and point observations.
+**What to implement**:
 
-    For each registered image, saves:
-    - Camera intrinsics (focal length, principal point, image size)
-    - Camera extrinsics (world-to-camera transform as 3x4 matrix)
-    - Camera position and viewing direction in world coords
-    - Image filename
+1. New function `_export_reconstruction_metadata(reconstruction, output_path)` in `reconstruction.py`:
+   - Iterate `reconstruction.cameras` → extract model, width, height, focal_length_x/y, principal_point_x/y
+   - Iterate `reconstruction.images` → extract name, camera_id, `cam_from_world().matrix()` (3x4), `projection_center()`, `viewing_direction()`
+   - Apply COLMAP→Three.js coordinate transform to projection_center and viewing_direction
+   - Save as JSON
 
-    For each 3D point, saves:
-    - World coordinates (in Three.js convention)
-    - Which images observe it (image_id + pixel coordinates)
-    """
-```
+2. Call it from `_run_pycolmap_pipeline()` after `_export_pointcloud()` (line 261)
 
-**Output**: `reconstruction_meta.json` alongside existing `pointcloud.ply` and `mesh.obj`.
+3. Add `metadata_path: Path | None` field to `SceneReconstruction` model in `space.py`
 
-**Data structure**:
+4. Set `metadata_path` when creating `SceneReconstruction` in `reconstruct_scene()`
+
+**Output schema**:
 ```json
 {
   "cameras": {
     "1": {
       "model": "PINHOLE",
-      "width": 4032,
-      "height": 3024,
-      "focal_length_x": 3456.7,
-      "focal_length_y": 3456.7,
-      "principal_point_x": 2016.0,
-      "principal_point_y": 1512.0
+      "width": 4032, "height": 3024,
+      "focal_length_x": 3456.7, "focal_length_y": 3456.7,
+      "principal_point_x": 2016.0, "principal_point_y": 1512.0
     }
   },
   "images": {
     "1": {
       "name": "IMG_001.jpg",
       "camera_id": 1,
-      "cam_from_world": [[r00,r01,r02,tx],[r10,r11,r12,ty],[r20,r21,r22,tz]],
-      "projection_center": [2.9, 2.1, 1.6],
-      "viewing_direction": [0.1, 0.8, -0.2]
+      "cam_from_world": [[r00,r01,r02,tx], [r10,r11,r12,ty], [r20,r21,r22,tz]],
+      "projection_center": [2.9, -2.1, -1.6],
+      "viewing_direction": [0.1, -0.8, 0.2]
     }
   },
   "num_points3D": 4521,
@@ -107,243 +87,304 @@ def _export_reconstruction_metadata(
 }
 ```
 
-**Estimated effort**: Small. Pure data extraction, no algorithm changes.
+**Validation step**:
+- Unit test: create a mock pycolmap Reconstruction with known camera/image data, verify exported JSON matches
+- Unit test: verify coordinate transform is applied to projection_center and viewing_direction
+- Unit test: verify `SceneReconstruction.metadata_path` is set and file exists
+- Regression: run existing `test_reconstruction.py` — all must pass
 
-**Files changed**: `reconstruction.py`, `space.py` (add path to SceneReconstruction)
-
----
-
-### Phase 2: Compute Spatial Anchors Per Image
-
-**Goal**: For each registered photo, project a meaningful set of 3D reference points into pixel coordinates.
-
-**New module**: `backend/app/services/spatial_anchors.py`
-
-**Algorithm**:
-
-```
-For each registered image:
-  1. Get all 3D points visible in this image (via point tracks)
-  2. Project each 3D point to pixel coordinates using image.project_point(xyz)
-  3. Filter: keep only points within image bounds and in front of camera
-  4. Sample strategically:
-     a. Floor points (z ≈ 0): anchor the ground plane
-     b. Wall points (x ≈ 0, x ≈ width, y ≈ 0, y ≈ length): anchor walls
-     c. Ceiling points (z ≈ ceiling): anchor height
-     d. Grid sampling: divide image into NxN cells, pick nearest point per cell
-  5. Add synthetic anchors from room geometry:
-     - Project room corners (0,0,0), (W,0,0), (0,L,0), (W,L,0) etc.
-     - Project wall midpoints, floor center
-  6. Output: list of (pixel_x, pixel_y, world_x, world_y, world_z, label)
-```
-
-**Anchor types**:
-
-| Type | Source | Purpose |
-|------|--------|---------|
-| `floor_point` | 3D points with z ≈ 0 | Ground plane reference |
-| `wall_point` | 3D points near room boundaries | Wall position reference |
-| `ceiling_point` | 3D points with z ≈ ceiling | Height reference |
-| `room_corner` | Projected room AABB corners | Absolute coordinate frame |
-| `grid_sample` | Evenly distributed visible points | Spatial coverage |
-
-**Sampling strategy**: ~20-40 anchors per image (not too many to overwhelm context, enough for spatial coverage). Prioritize diversity of world locations over density.
-
-**Output per image**:
-```json
-{
-  "image_name": "IMG_001.jpg",
-  "camera_position": [2.9, 2.1, 1.6],
-  "viewing_direction": [0.1, 0.8, -0.2],
-  "anchors": [
-    {"pixel": [320, 480], "world": [0.0, 0.0, 0.0], "label": "floor_corner_SW"},
-    {"pixel": [1200, 300], "world": [5.8, 0.0, 2.7], "label": "ceiling_edge"},
-    {"pixel": [700, 450], "world": [2.1, 1.3, 0.0], "label": "floor_point"},
-    {"pixel": [150, 380], "world": [0.0, 2.5, 0.9], "label": "wall_point_W"}
-  ]
-}
-```
-
-**Estimated effort**: Medium. Core algorithm is straightforward (pycolmap provides `project_point`), but needs careful sampling and filtering.
-
-**Files**: New `spatial_anchors.py`, tests `test_spatial_anchors.py`
+**Files changed**: `reconstruction.py`, `space.py`, `test_reconstruction.py`
 
 ---
 
-### Phase 3: Inject Anchors into Vision Prompt
+### Feature 2: Photo-to-Image ID Mapping
 
-**Goal**: Modify the Vision analysis prompt and request to include spatial anchors per image.
+**Commit**: `feat(reconstruction): save registered image name-to-id mapping`
 
-**Changes to `vision.py`**:
+> Save a mapping from photo filenames to pycolmap image IDs during
+> reconstruction. Required to attach correct spatial anchors to
+> each photo when sending to Claude Vision.
 
-The `_format_analysis_request()` function currently sends only room dimensions. We extend it to include per-image spatial context:
+**Goal**: Know which uploaded photos were successfully registered by SfM and their internal IDs.
 
-```python
-def _format_analysis_request(
-    dims: Dimensions,
-    image_anchors: list[ImageAnchors] | None = None,
-) -> str:
-    text = f"Room dimensions from 3D reconstruction:\n..."
+**What to implement**:
 
-    if image_anchors:
-        text += "\n## Spatial Reference Points\n\n"
-        text += (
-            "Each photo has spatial anchor points mapping pixel locations "
-            "to real-world 3D coordinates (meters). Use these to determine "
-            "precise positions of detected equipment.\n\n"
-        )
-        for img_anchor in image_anchors:
-            text += f"### {img_anchor.image_name}\n"
-            text += f"Camera at world ({img_anchor.camera_position}), "
-            text += f"looking toward ({img_anchor.viewing_direction})\n"
-            text += "| Pixel (x,y) | World (x,y,z) | Label |\n"
-            text += "|-------------|---------------|-------|\n"
-            for a in img_anchor.anchors:
-                text += f"| ({a.pixel[0]}, {a.pixel[1]}) | ({a.world[0]:.2f}, {a.world[1]:.2f}, {a.world[2]:.2f}) | {a.label} |\n"
-            text += "\n"
+1. In `_export_reconstruction_metadata()`, include a `registered_images` mapping:
+   ```json
+   {
+     "registered_images": {
+       "IMG_001.jpg": 1,
+       "IMG_003.jpg": 2,
+       "IMG_005.jpg": 3
+     },
+     "unregistered_images": ["IMG_002.jpg", "IMG_004.jpg"]
+   }
+   ```
 
-    return text
-```
+2. Compute by comparing `reconstruction.images[*].name` against the list of input photo filenames
 
-**Changes to `vision_analysis.md` prompt**:
+3. Log warning for unregistered images (failed SfM for those views)
 
-Add a new section explaining how to use spatial anchors:
+**Validation step**:
+- Unit test: with N input photos and M < N registered, verify mapping is correct and unregistered list contains the rest
+- Unit test: verify all filenames in registered_images are valid (no path prefix, just filename)
+- Regression: existing tests pass
 
-```markdown
-## Spatial Anchor Points
-
-Each photo includes a table of spatial anchor points. These map specific
-pixel locations in the photo to real-world 3D coordinates (meters).
-
-**How to use anchors for positioning**:
-1. Identify which photo shows an object most clearly
-2. Estimate which pixel region the object's base center occupies
-3. Find the nearest spatial anchors around that region
-4. Interpolate the world coordinates from surrounding anchors
-5. Use interpolated coordinates as the object's position
-
-**Example**: If a desk's base center appears near pixel (500, 420), and
-nearby anchors are:
-- pixel (450, 400) → world (2.1, 1.3, 0.0)
-- pixel (550, 440) → world (2.5, 1.5, 0.0)
-
-Then the desk position is approximately (2.3, 1.4, 0.0).
-
-**Important**: Always prefer anchor-derived positions over pure estimation.
-Anchors are computed from the actual 3D reconstruction and are metrically
-accurate.
-```
-
-**Token budget**: ~20-40 anchors per image × ~30 tokens each × 10-20 images = 6,000-24,000 tokens. Well within Claude's 200K context. Can be tuned down by reducing anchor count or number of annotated images.
-
-**Estimated effort**: Small-Medium. Mostly prompt engineering and text formatting.
-
-**Files changed**: `vision.py`, `prompts/vision_analysis.md`
+**Files changed**: `reconstruction.py`, `test_reconstruction.py`
 
 ---
 
-### Phase 4: Match Registered Photos to Uploaded Photos
+### Feature 3: Spatial Anchor Computation
 
-**Goal**: Map pycolmap's internal image IDs back to the user's uploaded photo filenames, so we send the correct anchors with the correct images.
+**Commit**: `feat(spatial-anchors): compute per-image 3D-to-pixel reference points`
 
-**Challenge**: pycolmap renames/indexes images internally. We need to match `reconstruction.images[id].name` to the actual `Path` objects in `photos: list[Path]`.
+> New module that projects reconstructed 3D points into each registered
+> photo's pixel space. Produces anchor tables (pixel→world coordinate)
+> that Claude Vision will use for precise equipment positioning.
 
-**Implementation**: During reconstruction, save a mapping `{image_name: image_id}`. In vision analysis, reorder photos to match registered images and attach the correct anchors.
+**Goal**: For each registered image, produce a set of ~20-40 spatial anchors mapping pixel coordinates to world coordinates.
 
-**Edge case**: Not all uploaded photos may be registered (some may fail SfM). We should:
-1. Send registered photos first (with anchors)
-2. Optionally send unregistered photos after (without anchors, for additional visual context)
-3. Clearly label which photos have anchors
+**What to implement**:
 
-**Estimated effort**: Small.
+1. New file `backend/app/services/spatial_anchors.py`
 
-**Files changed**: `reconstruction.py`, `vision.py`
+2. Pydantic models:
+   ```python
+   class SpatialAnchor(BaseModel):
+       pixel: tuple[int, int]       # (x, y) in image pixels
+       world: tuple[float, float, float]  # (x, y, z) in meters (Three.js convention)
+       label: str                   # e.g. "floor_point", "wall_W", "room_corner_SW"
+
+   class ImageAnchors(BaseModel):
+       image_name: str
+       image_id: int
+       camera_position: tuple[float, float, float]
+       viewing_direction: tuple[float, float, float]
+       anchors: list[SpatialAnchor]
+   ```
+
+3. Main function `compute_anchors_for_image(reconstruction, image_id, dims) -> ImageAnchors`:
+   - Get all 3D points visible in this image via `point3d.track.elements`
+   - For each visible point, project to pixels via `image.project_point(xyz)`
+   - Filter: within image bounds, in front of camera (project_point returns None if behind)
+   - Apply COLMAP→Three.js transform to world coordinates
+   - **Strategic sampling**:
+     a. Classify points: floor (z ≈ 0 ±0.3m), wall (near boundary ±0.3m), ceiling (z ≈ ceiling ±0.3m), interior
+     b. Pick up to 5 floor points, 3 per wall, 3 ceiling points (spatial diversity via grid)
+     c. Divide image into 4×4 grid cells, pick 1 nearest point per cell for coverage
+     d. Cap total at 40 anchors
+   - Label each anchor by type
+
+4. Function `compute_all_anchors(reconstruction, dims) -> list[ImageAnchors]`:
+   - Iterate registered images
+   - Call `compute_anchors_for_image()` for each
+   - Sort by number of anchors (most informative first)
+   - Cap at 10 images max (token budget)
+
+5. Function `add_synthetic_room_corners(image, reconstruction, dims) -> list[SpatialAnchor]`:
+   - Project the 8 room bounding box corners into the image
+   - Keep only those that land within image bounds and in front of camera
+   - Label as `room_corner_SW`, `room_corner_NE`, etc.
+
+**Validation step**:
+- Unit test: mock reconstruction with known camera pose + 3D points, verify projected pixel coords match expected values
+- Unit test: verify anchors are within image bounds (0..width, 0..height)
+- Unit test: verify world coordinates are in Three.js convention (Y-up)
+- Unit test: verify sampling produces diverse spatial distribution (not all in one corner)
+- Unit test: verify cap at 40 anchors per image and 10 images total
+- Unit test: synthetic room corners projected correctly for a simple pinhole camera
+
+**Files**: New `spatial_anchors.py`, new `test_spatial_anchors.py`
 
 ---
 
-### Phase 5: Validate Grounded Positions Against Point Cloud
+### Feature 4: Inject Anchors into Vision Request
 
-**Goal**: Cross-check Claude's output positions against the actual point cloud to catch gross errors.
+**Commit**: `feat(vision): include spatial anchors in Claude Vision analysis request`
 
-**New validation step in `vision.py`**:
+> Extend the vision analysis request to include per-image spatial anchor
+> tables. Claude receives pixel-to-world coordinate mappings alongside
+> each photo, enabling precise equipment positioning.
 
-```python
-def _validate_positions_against_cloud(
-    analysis: SceneAnalysis,
-    point_cloud: np.ndarray,
-    dims: Dimensions,
-) -> SceneAnalysis:
-    """Check equipment positions against point cloud density.
+**Goal**: `_format_analysis_request()` includes anchor data; `analyze_scene()` computes and passes anchors.
 
-    For each floor-mounted equipment item:
-    1. Find nearby points in the cloud (within equipment footprint)
-    2. If no points exist near the claimed position, flag low confidence
-    3. If point density suggests empty space (corridor), warn
+**What to implement**:
 
-    Does NOT move equipment — only adjusts confidence scores.
-    """
-```
+1. Extend `_format_analysis_request(dims, image_anchors=None)` in `vision.py`:
+   - If `image_anchors` is provided, append a "Spatial Reference Points" section
+   - For each image: camera position, viewing direction, anchor table (pixel→world)
+   - Format as markdown table for readability
 
-This provides a feedback signal: if Claude says there's a desk at (2.0, 1.5, 0.0) but no reconstruction points exist there, the confidence should drop.
+2. Extend `analyze_scene()` to:
+   - Load `reconstruction_meta.json` if it exists
+   - Load the pycolmap reconstruction from `sparse/` directory
+   - Call `compute_all_anchors()` to generate anchors
+   - Pass anchors to `_format_analysis_request()`
+   - Reorder `photos` list: registered photos first (matched by filename), unregistered last
 
-**Estimated effort**: Medium.
+3. Graceful fallback: if metadata or sparse dir missing, proceed without anchors (backward compatible)
+
+**Validation step**:
+- Unit test: verify `_format_analysis_request()` with anchors produces correct markdown table format
+- Unit test: verify `_format_analysis_request()` without anchors produces same output as before (backward compat)
+- Unit test: verify anchor text token count is within budget (< 30,000 tokens for 10 images × 40 anchors)
+- Integration test: mock `compute_all_anchors()` and verify `analyze_scene()` includes anchor data in the request
+- Regression: all existing `test_vision.py` tests pass
 
 **Files changed**: `vision.py`, `test_vision.py`
 
 ---
 
-## Implementation Order & Dependencies
+### Feature 5: Update Vision Prompt for Anchor Usage
+
+**Commit**: `feat(vision): update prompt to instruct anchor-based positioning`
+
+> Add instructions to the vision analysis prompt explaining how to use
+> spatial anchor points for equipment positioning. Includes interpolation
+> method and a worked example.
+
+**Goal**: Claude knows how to use anchor tables to derive precise positions.
+
+**What to implement**:
+
+1. Add new section to `prompts/vision_analysis.md` after "Dimension Estimation Guide":
+
+   ```markdown
+   ## Spatial Anchor Points
+
+   When provided, each photo includes a table of spatial anchor points mapping
+   pixel locations to real-world 3D coordinates (meters). These are computed
+   from the actual 3D reconstruction and are metrically accurate.
+
+   **How to use anchors for positioning**:
+   1. Identify which photo shows an object most clearly
+   2. Estimate which pixel region the object's base center occupies
+   3. Find the 2-4 nearest spatial anchors surrounding that pixel region
+   4. Interpolate the world coordinates from those anchors
+   5. Use the interpolated result as the object's position
+
+   **Example**: A desk's base center appears near pixel (500, 420).
+   Nearby anchors:
+   - pixel (450, 400) → world (2.10, 1.30, 0.00)
+   - pixel (550, 440) → world (2.50, 1.50, 0.00)
+   Interpolated position: approximately (2.30, 1.40, 0.00).
+
+   **Rules**:
+   - ALWAYS prefer anchor-derived positions over pure visual estimation
+   - If no anchors are near an object, fall back to room-dimension-based estimation
+   - Floor-level anchors (z ≈ 0) are most reliable for XY positioning
+   - Wall anchors help confirm wall-relative placement of doors/windows
+   ```
+
+2. Update the "Guidelines" section:
+   - Add: "When spatial anchors are provided, use them as primary position reference"
+   - Add: "Report which photo and approximate pixel region you used for each equipment position"
+
+**Validation step**:
+- Manual review: prompt reads clearly and gives actionable instructions
+- Unit test: `load_prompt("vision_analysis")` loads successfully and contains "Spatial Anchor Points" section
+- Regression: existing prompt loading tests pass
+
+**Files changed**: `prompts/vision_analysis.md`, `test_prompts.py`
+
+---
+
+### Feature 6: Point Cloud Position Validation
+
+**Commit**: `feat(vision): validate equipment positions against point cloud density`
+
+> Cross-check Claude's reported equipment positions against the actual
+> point cloud. Adjusts confidence scores down when no reconstruction
+> points exist near a claimed equipment location.
+
+**Goal**: Catch gross positioning errors by checking if the point cloud supports Claude's claims.
+
+**What to implement**:
+
+1. New function `validate_positions_against_cloud(analysis, pointcloud_path, dims) -> SceneAnalysis` in `vision.py`:
+   - Load point cloud from PLY (trimesh)
+   - Build a KD-tree from point cloud vertices (scipy.spatial.KDTree or trimesh)
+   - For each floor-mounted equipment item:
+     a. Define search region: equipment position ± half-dimensions (footprint box)
+     b. Query KD-tree for points within search radius
+     c. Count nearby points
+     d. If count < threshold (e.g., 3 points within 0.5m): reduce confidence by 0.2
+     e. If count == 0 within 1.0m: reduce confidence by 0.4 and log warning
+   - Return modified analysis with updated confidences
+
+2. Call from `analyze_scene()` after `validate_analysis()`, if pointcloud_path is available
+
+3. Add `pointcloud_path` to `SceneReconstruction` (if not already there) and pass through
+
+**Validation step**:
+- Unit test: create synthetic point cloud (numpy array), place equipment at known positions, verify confidence stays high when points exist nearby
+- Unit test: place equipment in empty region of cloud, verify confidence is reduced
+- Unit test: verify wall-mounted and ceiling-mounted items are skipped (only floor-mounted checked)
+- Unit test: verify function is no-op when pointcloud_path is None (backward compat)
+- Regression: all existing `test_vision.py` tests pass
+
+**Files changed**: `vision.py`, `test_vision.py`
+
+---
+
+### Feature 7: Integration Wiring & End-to-End Validation
+
+**Commit**: `feat(spatial-grounding): wire full anchor pipeline from reconstruction to vision`
+
+> Connect all spatial grounding components end-to-end: reconstruction
+> metadata export → anchor computation → vision prompt injection →
+> position validation. Includes integration test.
+
+**Goal**: Full pipeline works: `reconstruct_scene()` → metadata saved → `analyze_scene()` uses anchors → positions validated.
+
+**What to implement**:
+
+1. Verify `reconstruct_scene()` now saves metadata JSON alongside point cloud
+2. Verify `analyze_scene()` loads metadata, computes anchors, injects into prompt
+3. Verify `validate_positions_against_cloud()` runs after analysis
+4. Update `calibrate_and_analyze()` in `capture.py` if needed to pass new data through
+5. Ensure backward compatibility: if metadata doesn't exist (old reconstructions), everything still works
+
+**Validation step**:
+- Integration test: mock full pipeline (pycolmap reconstruction → metadata → anchors → vision request), verify anchors appear in Claude request payload
+- Integration test: verify old projects without metadata still work (no crash, no anchors in request)
+- E2E test: add to `test_e2e_pipeline.py` — verify metadata file exists after reconstruction, anchor computation succeeds
+- Manual test: run on real photos (if available) and compare position accuracy before/after
+- Regression: full test suite passes
+
+**Files changed**: `capture.py`, `vision.py`, `test_e2e_pipeline.py`
+
+---
+
+## Implementation Order
 
 ```
-Phase 1: Export metadata ──→ Phase 2: Compute anchors ──→ Phase 3: Inject into prompt
-                                                              │
-Phase 4: Match photos ────────────────────────────────────────┘
-                                                              │
-                                                        Phase 5: Validate against cloud
+Feature 1 ──→ Feature 2 ──→ Feature 3 ──→ Feature 4 ──→ Feature 5 ──→ Feature 7
+                                                                          ↑
+                                                          Feature 6 ──────┘
 ```
 
-Phases 1-3 are sequential (each depends on the previous).
-Phase 4 can be developed in parallel with Phase 2.
-Phase 5 is independent and can be done after Phase 3.
+Features 1-5 are strictly sequential.
+Feature 6 can be developed in parallel after Feature 4.
+Feature 7 wires everything together and runs final validation.
 
-## Estimated Impact
+## Commit Summary
+
+| # | Commit message | Files changed |
+|---|---------------|---------------|
+| 1 | `feat(reconstruction): export camera poses and intrinsics from pycolmap` | reconstruction.py, space.py, test_reconstruction.py |
+| 2 | `feat(reconstruction): save registered image name-to-id mapping` | reconstruction.py, test_reconstruction.py |
+| 3 | `feat(spatial-anchors): compute per-image 3D-to-pixel reference points` | spatial_anchors.py, test_spatial_anchors.py |
+| 4 | `feat(vision): include spatial anchors in Claude Vision analysis request` | vision.py, test_vision.py |
+| 5 | `feat(vision): update prompt to instruct anchor-based positioning` | vision_analysis.md, test_prompts.py |
+| 6 | `feat(vision): validate equipment positions against point cloud density` | vision.py, test_vision.py |
+| 7 | `feat(spatial-grounding): wire full anchor pipeline from reconstruction to vision` | capture.py, vision.py, test_e2e_pipeline.py |
+
+## Expected Impact
 
 | Metric | Before | After (expected) |
 |--------|--------|-------------------|
 | Position accuracy | ±0.5-1.0m (guess) | ±0.1-0.3m (anchor-interpolated) |
-| Dimension accuracy | ±30-50% (reference guide) | ±15-25% (same, but positions improve downstream) |
+| Dimension accuracy | ±30-50% (reference guide) | ±15-25% (positions improve downstream) |
 | Confidence reliability | Unreliable (self-assessed) | Validated against point cloud |
 | User correction needed | Almost always | Occasionally |
-
-## Token Budget Analysis
-
-| Component | Tokens | Notes |
-|-----------|--------|-------|
-| System prompt (current) | ~1,800 | vision_analysis.md |
-| Dimension text (current) | ~400 | Room dimensions + wall refs |
-| **Anchor section (new)** | **6,000-24,000** | 20-40 anchors × 10-20 images |
-| Images (base64) | ~85,000/image | Not counted as text tokens by Claude |
-| **Total text context** | **~8,000-26,000** | Well within 200K limit |
-
-Can be further optimized by:
-- Annotating only top-10 most informative images (widest coverage)
-- Reducing to 15-20 anchors per image
-- Dropping images that cover the same area
-
-## Risks & Mitigations
-
-| Risk | Likelihood | Mitigation |
-|------|-----------|------------|
-| Claude ignores anchors | Medium | Strong prompt instructions + few-shot example in prompt |
-| Too few visible points per image | Low (SfM only works with good coverage) | Fall back to room-corner projections as synthetic anchors |
-| Anchor projection inaccurate due to calibration error | Medium | Anchors are relative to same coordinate system as point cloud — error is consistent |
-| Token budget exceeded with many images | Low | Cap annotated images at 10; send rest without anchors |
-| Interpolation error from sparse anchors | Medium | Use grid sampling to ensure spatial coverage; 20+ anchors per image |
-
-## Testing Strategy
-
-1. **Unit tests for Phase 1**: Verify metadata export matches reconstruction data
-2. **Unit tests for Phase 2**: Verify anchor projection against known camera-point pairs; verify sampling produces good spatial coverage
-3. **Integration test for Phase 3**: Mock Claude response to verify anchors are included in request text
-4. **Accuracy benchmark (manual)**: Run full pipeline on 2-3 test rooms with known furniture positions; compare with/without anchors
-5. **Regression tests**: Ensure existing tests pass (no breaking changes to SceneAnalysis format)
