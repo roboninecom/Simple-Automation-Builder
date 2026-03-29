@@ -18,7 +18,12 @@ from backend.app.models.space import (
 )
 from backend.app.services.spatial_anchors import ImageAnchors
 
-__all__ = ["analyze_scene", "build_space_model", "validate_analysis"]
+__all__ = [
+    "analyze_scene",
+    "build_space_model",
+    "validate_analysis",
+    "validate_positions_against_cloud",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +223,88 @@ def _clamp(value: float, min_val: float, max_val: float) -> float:
         Clamped value.
     """
     return max(min_val, min(value, max_val))
+
+
+def validate_positions_against_cloud(
+    analysis: SceneAnalysis,
+    pointcloud_path: Path | None,
+    dims: Dimensions,
+    near_radius: float = 0.5,
+    far_radius: float = 1.0,
+    near_penalty: float = 0.2,
+    far_penalty: float = 0.4,
+) -> SceneAnalysis:
+    """Cross-check equipment positions against point cloud density.
+
+    For each floor-mounted equipment item, queries nearby points in the
+    cloud. If no points exist near the claimed position, confidence is
+    reduced — indicating the position may be incorrect.
+
+    Args:
+        analysis: Parsed scene analysis.
+        pointcloud_path: Path to PLY point cloud file (None to skip).
+        dims: Room dimensions.
+        near_radius: Radius for "close" point search in meters.
+        far_radius: Radius for "far" point search in meters.
+        near_penalty: Confidence penalty when no close points found.
+        far_penalty: Confidence penalty when no far points found either.
+
+    Returns:
+        SceneAnalysis with adjusted confidence scores.
+    """
+    if pointcloud_path is None or not pointcloud_path.exists():
+        return analysis
+    if pointcloud_path.stat().st_size == 0:
+        return analysis
+
+    try:
+        import trimesh
+        from scipy.spatial import KDTree
+
+        cloud = trimesh.load(str(pointcloud_path))
+        if not hasattr(cloud, "vertices") or len(cloud.vertices) < 3:
+            return analysis
+
+        tree = KDTree(cloud.vertices)
+    except Exception:
+        logger.warning("Failed to load point cloud for validation", exc_info=True)
+        return analysis
+
+    updated_equipment = []
+    for eq in analysis.existing_equipment:
+        if eq.mounting != "floor":
+            updated_equipment.append(eq)
+            continue
+
+        pos = eq.position
+        query_point = [pos[0], pos[1], 0.0]
+
+        near_count = tree.query_ball_point(query_point, near_radius, return_length=True)
+        if near_count >= 3:
+            updated_equipment.append(eq)
+            continue
+
+        far_count = tree.query_ball_point(query_point, far_radius, return_length=True)
+        if far_count == 0:
+            new_conf = max(0.0, eq.confidence - far_penalty)
+            logger.warning(
+                "Equipment '%s' at (%.2f, %.2f): no points within %.1fm — "
+                "confidence %.2f → %.2f",
+                eq.name, pos[0], pos[1], far_radius,
+                eq.confidence, new_conf,
+            )
+            updated_equipment.append(eq.model_copy(update={"confidence": new_conf}))
+        else:
+            new_conf = max(0.0, eq.confidence - near_penalty)
+            logger.info(
+                "Equipment '%s' at (%.2f, %.2f): few points within %.1fm — "
+                "confidence %.2f → %.2f",
+                eq.name, pos[0], pos[1], near_radius,
+                eq.confidence, new_conf,
+            )
+            updated_equipment.append(eq.model_copy(update={"confidence": new_conf}))
+
+    return analysis.model_copy(update={"existing_equipment": updated_equipment})
 
 
 def _format_analysis_request(

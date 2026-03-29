@@ -1,5 +1,9 @@
 """Tests for Claude Vision scene analysis."""
 
+from pathlib import Path
+
+import numpy as np
+
 from backend.app.models.space import (
     Dimensions,
     ExistingEquipment,
@@ -13,6 +17,7 @@ from backend.app.services.vision import (
     _format_anchor_section,
     build_space_model,
     validate_analysis,
+    validate_positions_against_cloud,
 )
 
 
@@ -238,3 +243,107 @@ class TestFormatAnchorSection:
         assert "IMG_0.jpg" in text
         assert "IMG_1.jpg" in text
         assert "IMG_2.jpg" in text
+
+
+def _make_ply_with_points(path: Path, vertices: np.ndarray) -> None:
+    """Write a minimal PLY point cloud for testing.
+
+    Args:
+        path: Output PLY file path.
+        vertices: Nx3 numpy array of point positions.
+    """
+    import trimesh
+
+    cloud = trimesh.PointCloud(vertices=vertices)
+    cloud.export(str(path))
+
+
+class TestValidatePositionsAgainstCloud:
+    """Tests for point cloud position validation."""
+
+    def _dims(self) -> Dimensions:
+        return Dimensions(width_m=6.0, length_m=4.0, ceiling_m=2.7, area_m2=24.0)
+
+    def test_confidence_stays_when_points_nearby(self, tmp_path: Path) -> None:
+        ply = tmp_path / "cloud.ply"
+        # Points clustered around (2.0, 1.5, 0.0)
+        verts = np.array([
+            [1.9, 1.4, 0.0], [2.0, 1.5, 0.1], [2.1, 1.6, 0.0],
+            [2.0, 1.5, 0.0], [1.8, 1.5, 0.0],
+        ])
+        _make_ply_with_points(ply, verts)
+
+        analysis = SceneAnalysis(
+            existing_equipment=[
+                ExistingEquipment(
+                    name="desk", category="table",
+                    position=(2.0, 1.5, 0.375), confidence=0.9,
+                    mounting="floor", dimensions=(1.2, 0.6, 0.75),
+                ),
+            ],
+        )
+        result = validate_positions_against_cloud(analysis, ply, self._dims())
+        assert result.existing_equipment[0].confidence == 0.9
+
+    def test_confidence_reduced_when_no_points(self, tmp_path: Path) -> None:
+        ply = tmp_path / "cloud.ply"
+        # Points far from (5.0, 3.5)
+        verts = np.array([[0.0, 0.0, 0.0], [0.1, 0.1, 0.0], [0.2, 0.0, 0.0]])
+        _make_ply_with_points(ply, verts)
+
+        analysis = SceneAnalysis(
+            existing_equipment=[
+                ExistingEquipment(
+                    name="desk", category="table",
+                    position=(5.0, 3.5, 0.375), confidence=0.9,
+                    mounting="floor", dimensions=(1.2, 0.6, 0.75),
+                ),
+            ],
+        )
+        result = validate_positions_against_cloud(analysis, ply, self._dims())
+        assert result.existing_equipment[0].confidence < 0.9
+
+    def test_wall_mounted_skipped(self, tmp_path: Path) -> None:
+        ply = tmp_path / "cloud.ply"
+        verts = np.array([[0.0, 0.0, 0.0], [0.1, 0.1, 0.0], [0.2, 0.0, 0.0]])
+        _make_ply_with_points(ply, verts)
+
+        analysis = SceneAnalysis(
+            existing_equipment=[
+                ExistingEquipment(
+                    name="ac", category="appliance",
+                    position=(5.0, 3.5, 2.2), confidence=0.85,
+                    mounting="wall",
+                ),
+            ],
+        )
+        result = validate_positions_against_cloud(analysis, ply, self._dims())
+        assert result.existing_equipment[0].confidence == 0.85
+
+    def test_none_path_is_noop(self) -> None:
+        analysis = SceneAnalysis(
+            existing_equipment=[
+                ExistingEquipment(
+                    name="desk", category="table",
+                    position=(2.0, 1.5, 0.375), confidence=0.9,
+                    mounting="floor",
+                ),
+            ],
+        )
+        result = validate_positions_against_cloud(analysis, None, self._dims())
+        assert result.existing_equipment[0].confidence == 0.9
+
+    def test_empty_cloud_is_noop(self, tmp_path: Path) -> None:
+        ply = tmp_path / "cloud.ply"
+        ply.touch()
+        analysis = SceneAnalysis(
+            existing_equipment=[
+                ExistingEquipment(
+                    name="desk", category="table",
+                    position=(2.0, 1.5, 0.375), confidence=0.9,
+                    mounting="floor",
+                ),
+            ],
+        )
+        result = validate_positions_against_cloud(analysis, ply, self._dims())
+        assert result.existing_equipment[0].confidence == 0.9
