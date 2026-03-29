@@ -1,5 +1,7 @@
 """Claude Vision scene analysis — photos → structured SceneAnalysis."""
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
@@ -14,12 +16,54 @@ from backend.app.models.space import (
     SceneReconstruction,
     SpaceModel,
 )
+from backend.app.services.spatial_anchors import ImageAnchors
 
 __all__ = ["analyze_scene", "build_space_model", "validate_analysis"]
 
 logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 2
+
+
+def _try_compute_anchors(
+    reconstruction: SceneReconstruction,
+) -> list[ImageAnchors] | None:
+    """Attempt to compute spatial anchors from reconstruction data.
+
+    Returns None if metadata or sparse dir is unavailable (backward compat).
+
+    Args:
+        reconstruction: Scene reconstruction result.
+
+    Returns:
+        List of ImageAnchors or None if data is unavailable.
+    """
+    if reconstruction.sparse_dir is None or not reconstruction.sparse_dir.exists():
+        logger.info("No sparse dir — skipping spatial anchors")
+        return None
+
+    try:
+        import pycolmap
+
+        from backend.app.services.spatial_anchors import compute_all_anchors
+
+        recon = pycolmap.Reconstruction()
+        sparse_subdirs = sorted(reconstruction.sparse_dir.iterdir())
+        if not sparse_subdirs:
+            logger.warning("Sparse dir empty — skipping spatial anchors")
+            return None
+        recon.read(str(sparse_subdirs[0]))
+
+        anchors = compute_all_anchors(recon, reconstruction.dimensions)
+        logger.info(
+            "Computed spatial anchors for %d images (%d total anchors)",
+            len(anchors),
+            sum(len(ia.anchors) for ia in anchors),
+        )
+        return anchors if anchors else None
+    except Exception:
+        logger.warning("Failed to compute spatial anchors", exc_info=True)
+        return None
 
 
 async def analyze_scene(
@@ -42,7 +86,8 @@ async def analyze_scene(
     """
     system_prompt = load_prompt("vision_analysis")
     dims = reconstruction.dimensions
-    text = _format_analysis_request(dims)
+    image_anchors = _try_compute_anchors(reconstruction)
+    text = _format_analysis_request(dims, image_anchors)
 
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
@@ -175,16 +220,20 @@ def _clamp(value: float, min_val: float, max_val: float) -> float:
     return max(min_val, min(value, max_val))
 
 
-def _format_analysis_request(dims: Dimensions) -> str:
+def _format_analysis_request(
+    dims: Dimensions,
+    image_anchors: list[ImageAnchors] | None = None,
+) -> str:
     """Format the text portion of the vision analysis request.
 
     Args:
         dims: Room dimensions from reconstruction.
+        image_anchors: Optional spatial anchors per image for precise positioning.
 
     Returns:
         Formatted request text.
     """
-    return (
+    text = (
         f"Room dimensions from 3D reconstruction:\n"
         f"  Width (X-axis): {dims.width_m:.2f}m\n"
         f"  Length (Y-axis): {dims.length_m:.2f}m\n"
@@ -195,14 +244,56 @@ def _format_analysis_request(dims: Dimensions) -> str:
         f"  South wall: Y = 0\n"
         f"  East wall: X = {dims.width_m:.2f}\n"
         f"  West wall: X = 0\n\n"
-        f"Analyze these photos and return a JSON with:\n"
-        f"1. Functional zones (name, polygon, area)\n"
-        f"2. Existing equipment with estimated dimensions [w, d, h], "
-        f"orientation_deg, rgba color, mounting type, shape\n"
-        f"3. Doors with wall assignment and height\n"
-        f"4. Windows with wall assignment, height, and sill_height_m\n\n"
-        f"Return ONLY valid JSON matching the schema in the system prompt."
     )
+
+    if image_anchors:
+        text += _format_anchor_section(image_anchors)
+
+    text += (
+        "Analyze these photos and return a JSON with:\n"
+        "1. Functional zones (name, polygon, area)\n"
+        "2. Existing equipment with estimated dimensions [w, d, h], "
+        "orientation_deg, rgba color, mounting type, shape\n"
+        "3. Doors with wall assignment and height\n"
+        "4. Windows with wall assignment, height, and sill_height_m\n\n"
+        "Return ONLY valid JSON matching the schema in the system prompt."
+    )
+    return text
+
+
+def _format_anchor_section(image_anchors: list[ImageAnchors]) -> str:
+    """Format spatial anchor data as text for the vision request.
+
+    Args:
+        image_anchors: Anchor data per image.
+
+    Returns:
+        Formatted markdown section describing anchors.
+    """
+    lines = [
+        "## Spatial Reference Points\n",
+        "Each photo below has spatial anchor points that map pixel locations "
+        "to real-world 3D coordinates (meters). Use these to determine "
+        "precise positions of detected equipment.\n",
+    ]
+
+    for ia in image_anchors:
+        lines.append(f"### {ia.image_name}")
+        cx, cy, cz = ia.camera_position
+        dx, dy, dz = ia.viewing_direction
+        lines.append(
+            f"Camera at ({cx:.2f}, {cy:.2f}, {cz:.2f}), "
+            f"looking toward ({dx:.2f}, {dy:.2f}, {dz:.2f})"
+        )
+        lines.append("| Pixel (x,y) | World (x,y,z) | Label |")
+        lines.append("|-------------|---------------|-------|")
+        for a in ia.anchors:
+            px, py = a.pixel
+            wx, wy, wz = a.world
+            lines.append(f"| ({px}, {py}) | ({wx:.2f}, {wy:.2f}, {wz:.2f}) | {a.label} |")
+        lines.append("")
+
+    return "\n".join(lines) + "\n"
 
 
 def _parse_analysis_response(response: str) -> SceneAnalysis:

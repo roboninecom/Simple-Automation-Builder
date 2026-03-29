@@ -6,8 +6,11 @@ from backend.app.models.space import (
     SceneAnalysis,
     Zone,
 )
+from backend.app.services.spatial_anchors import ImageAnchors, SpatialAnchor
 from backend.app.services.vision import (
     _extract_json,
+    _format_analysis_request,
+    _format_anchor_section,
     build_space_model,
     validate_analysis,
 )
@@ -156,3 +159,82 @@ class TestValidateAnalysis:
         assert eq.dimensions == (0.4, 0.4, 0.8)
         assert eq.orientation_deg == 0.0
         assert eq.mounting == "floor"
+
+
+class TestFormatAnalysisRequest:
+    """Tests for analysis request formatting with/without anchors."""
+
+    def _dims(self) -> Dimensions:
+        return Dimensions(width_m=5.0, length_m=4.0, ceiling_m=2.8, area_m2=20.0)
+
+    def test_without_anchors_backward_compat(self) -> None:
+        text = _format_analysis_request(self._dims())
+        assert "Width (X-axis): 5.00m" in text
+        assert "Spatial Reference Points" not in text
+
+    def test_with_anchors_includes_section(self) -> None:
+        anchors = [
+            ImageAnchors(
+                image_name="photo1.jpg",
+                image_id=1,
+                camera_position=(2.5, 2.0, 1.5),
+                viewing_direction=(0.0, 1.0, 0.0),
+                anchors=[
+                    SpatialAnchor(pixel=(100, 200), world=(1.0, 0.5, 0.0), label="floor_point"),
+                    SpatialAnchor(pixel=(500, 300), world=(3.0, 2.0, 0.0), label="grid_sample"),
+                ],
+            )
+        ]
+        text = _format_analysis_request(self._dims(), image_anchors=anchors)
+        assert "Spatial Reference Points" in text
+        assert "photo1.jpg" in text
+        assert "(100, 200)" in text
+        assert "(1.00, 0.50, 0.00)" in text
+        assert "floor_point" in text
+
+    def test_with_none_anchors_same_as_without(self) -> None:
+        text_none = _format_analysis_request(self._dims(), image_anchors=None)
+        text_no_arg = _format_analysis_request(self._dims())
+        assert text_none == text_no_arg
+
+    def test_with_empty_anchors_same_as_without(self) -> None:
+        text_empty = _format_analysis_request(self._dims(), image_anchors=[])
+        text_no_arg = _format_analysis_request(self._dims())
+        assert text_empty == text_no_arg
+
+
+class TestFormatAnchorSection:
+    """Tests for anchor section formatting."""
+
+    def test_contains_markdown_table(self) -> None:
+        anchors = [
+            ImageAnchors(
+                image_name="IMG_001.jpg",
+                image_id=1,
+                camera_position=(1.0, 2.0, 1.5),
+                viewing_direction=(0.0, 0.0, -1.0),
+                anchors=[
+                    SpatialAnchor(pixel=(320, 480), world=(0.0, 0.0, 0.0), label="room_corner_SW_floor"),
+                ],
+            )
+        ]
+        text = _format_anchor_section(anchors)
+        assert "| Pixel (x,y) |" in text
+        assert "| (320, 480) |" in text
+        assert "room_corner_SW_floor" in text
+
+    def test_multiple_images(self) -> None:
+        anchors = [
+            ImageAnchors(
+                image_name=f"IMG_{i}.jpg",
+                image_id=i,
+                camera_position=(0, 0, 0),
+                viewing_direction=(0, 1, 0),
+                anchors=[SpatialAnchor(pixel=(0, 0), world=(0, 0, 0), label="test")],
+            )
+            for i in range(3)
+        ]
+        text = _format_anchor_section(anchors)
+        assert "IMG_0.jpg" in text
+        assert "IMG_1.jpg" in text
+        assert "IMG_2.jpg" in text
