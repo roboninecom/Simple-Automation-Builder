@@ -1,4 +1,4 @@
-# Robo9 Automate
+# Robo9 Simple Automation Builder
 
 **Text description → robotic cell simulation → iterative improvement.** No real hardware. Works with any type of small business and any set of equipment — with or without robots.
 
